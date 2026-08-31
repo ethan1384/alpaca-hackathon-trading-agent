@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: ["@alpacahq/alpaca-trade-api", "ws", "@msgpack/msgpack"],
 };
 
 export default nextConfig;

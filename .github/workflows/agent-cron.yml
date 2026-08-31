@@ -1,0 +1,32 @@
+# Drives POST /api/agent/run on a fixed interval during US market hours (Mon–Thu).
+# Vercel Hobby cron is limited to once per day — use this workflow instead.
+#
+# Required repository secrets:
+#   AGENT_RUN_URL  — e.g. https://your-app.vercel.app/api/agent/run
+#   MCP_AUTH_TOKEN — same bearer token as on Vercel (protects the route)
+
+name: Agent cron
+
+on:
+  schedule:
+    # Every 2 minutes, Mon–Thu, 13:00–20:59 UTC (covers US session + margin)
+    - cron: "*/2 13-20 * * 1-4"
+  workflow_dispatch:
+
+jobs:
+  run-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: POST agent cycle
+        env:
+          AGENT_RUN_URL: ${{ secrets.AGENT_RUN_URL }}
+          MCP_AUTH_TOKEN: ${{ secrets.MCP_AUTH_TOKEN }}
+        run: |
+          if [ -z "$AGENT_RUN_URL" ] || [ -z "$MCP_AUTH_TOKEN" ]; then
+            echo "AGENT_RUN_URL and MCP_AUTH_TOKEN secrets must be set"
+            exit 1
+          fi
+          curl -fsS --max-time 280 -X POST \
+            -H "Authorization: Bearer ${MCP_AUTH_TOKEN}" \
+            "$AGENT_RUN_URL"
