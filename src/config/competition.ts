@@ -1,6 +1,6 @@
 /**
- * Machine-readable restatement of the hackathon rules. Prose + rationale live in
- * `docs/05-hackathon-rules.md`; the rule ids ([R#]/[D#]) below point back at it.
+ * Legacy machine-readable event calendar. The personal-project status and migration
+ * direction live in `docs/05-legacy-competition.md`.
  *
  * Pure module — no env, no `server-only`, no I/O — so both the server guardrails
  * and any UI surface can import it, and so every rule is unit-testable.

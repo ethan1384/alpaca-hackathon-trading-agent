@@ -77,7 +77,7 @@ derives to `mleg`; size the whole structure with the top-level `qty`; `type` is
 ```
 
 The strategy layer builds these automatically — see
-`src/server/strategies/` and `docs/04-llm-agent.md`.
+`src/server/strategies/` and `docs/08-agent.md`.
 
 ## MCP server
 

@@ -265,7 +265,7 @@ export const PlaceOrderSchema = z
     }
     // [R10] Alpaca supports market / limit / stop / stop_limit on options.
     // Trailing stops are equities-only — fail here rather than on an Alpaca
-    // 4xx mid-session. See docs/05-hackathon-rules.md.
+    // 4xx mid-session. See docs/05-legacy-competition.md.
     if (v.type === "trailing_stop" && v.symbol && isOptionSymbol(v.symbol)) {
       ctx.addIssue({
         code: "custom",

@@ -1,12 +1,10 @@
 # Options Parameters, Risk & Operations (calibrated)
 
-Source: *Agent de trading d'options — Spécification des paramètres & glossaire*
-(reference document, hackathon Alpaca AI Trading Agents). This file is the
-English, repo-anchored restatement of it.
-
-`docs/05-hackathon-rules.md` says what the competition **forbids**.
-This file says how the agent should be **calibrated** inside what is allowed,
-and what the operator/judge should be able to observe while it runs.
+This is the parameter, risk and operational design register for the personal
+trading project. It originated in the former Alpaca event, so some calibrations
+still describe its four-session window. Those historical constraints are
+summarised in `docs/05-legacy-competition.md`; the reusable risk controls in
+this document remain the target for ongoing development.
 
 Ids: **[P#]** parameters, **[K#]** portfolio risk, **[O#]** operational.
 Each carries a status:
@@ -233,7 +231,7 @@ Notes on the two that carry the most weight:
 
 ```
 executeSignal()                         ← the single execution entry point
-  ├─ assertSignalAllowed()              hackathon rules  (docs/05)
+  ├─ assertSignalAllowed()              legacy event compatibility (docs/05)
   └─ assertTradeAllowed()               risk layer       (this file)
        ├─ isHalted()                    [O1] — checked first, before any I/O
        ├─ checkExecutionWindow()        [O3]
@@ -410,8 +408,8 @@ Exploits the theta differential and the term structure.
 ### 10.5 Account mechanics
 
 **Assignment** — obligation to deliver or buy the underlying when a sold option is
-exercised. The principal risk of short ITM legs into expiration. *Hackathon
-impact:* assignments on 2026-09-03 **are reflected in the judged equity** ([R5]).
+exercised. The principal risk of short ITM legs into expiration. Historical note:
+assignments on 2026-09-03 were reflected in the former event's final equity.
 
 **Early exercise** — possible on American-style options (single names, ETFs);
 impossible on European-style (SPX, XSP). Cash-settled index options remove this
@@ -420,9 +418,9 @@ risk entirely.
 **Buying power** — capital available to open new positions. On defined-risk
 structures it equals the position's maximum loss [K3].
 
-**Total equity** — cash + market value of positions. **This is the hackathon's
-scoring metric** ([R3]/[D2]) — not the cash balance. Cash goes *down* when the
-agent buys options; that is not a loss.
+**Total equity** — cash + market value of positions. This is the useful portfolio
+value, not the cash balance. Cash goes *down* when the agent buys options; that
+alone is not a loss.
 
 ---
 

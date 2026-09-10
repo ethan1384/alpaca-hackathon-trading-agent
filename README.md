@@ -1,12 +1,59 @@
-# Alpaca Hackathon Trading Agent — Phase 1
+# Alpaca Options Trading Agent
 
-Real-time Alpaca market dashboard built as a single Next.js application.
+Personal research project for building, backtesting and operating options-trading
+agents on Alpaca paper accounts.
+
+The repository is a single Next.js application containing the market-data hub,
+operator dashboard, trading API, backtests, risk controls, MCP server and an LLM-assisted
+SPY credit-spread agent.
+
+> **Paper trading first.** Order routes submit to the Alpaca account configured in
+> `.env`. Keep `ALPACA_PAPER=true` until the strategy, authentication and operational
+> controls have been reviewed for your deployment.
+
+## Features
+
+- Real-time stock, crypto and option monitoring through a server-owned Alpaca WebSocket hub.
+- SSE fan-out to a React dashboard with charts, quotes and crypto order-book depth.
+- Manual account, position and order management.
+- Option-chain search and multi-leg option orders.
+- Ascending-triangle swing, ORB debit-vertical and short credit-spread backtest engines.
+- Deterministic portfolio limits, data-quality checks, reconciliation and kill switch.
+- OpenAI-compatible LLM client used as a narrow entry-veto and early-exit layer.
+- Streamable HTTP MCP server at `/api/mcp` for agent integrations.
+- Local filesystem or Vercel Blob persistence for agent state and decision logs.
+
+## Archived agent and current research
+
+The implemented autonomous strategy is archived at tag
+`archive/credit-spread-agent`. It trades a defined-risk SPY bull put spread:
+
+- short put near 0.175 delta;
+- long protective put five points lower;
+- 1–2 DTE;
+- 1% of account equity at risk per spread;
+- at most two managed spreads;
+- mechanical profit target, stop and time-based exits;
+- LLM veto before entry and optional early close in the loss "dead zone".
+
+The original agent window is frozen to the former event dates in
+`src/config/competition.ts`. As a result, autonomous entries are currently closed even
+when the legacy enforcement flag is disabled. Manual trading, market data and backtests
+remain usable. Before running the autonomous agent as an ongoing personal system, replace
+the fixed window with a configurable operating calendar and update its tests. See
+[Legacy competition compatibility](docs/05-legacy-competition.md).
+
+The current research track is an ascending-triangle breakout on daily bars, expressed as
+a 30–45 DTE long call or bull call spread. Its detector and backtest are implemented, but
+no tested variant currently demonstrates an edge and it is intentionally not wired to live
+execution. See [Ascending-triangle strategy](docs/09-strategie-triangle.md).
 
 ## Requirements
 
 - Node.js 20+ (24 recommended)
 - pnpm
-- Alpaca paper trading API keys
+- Alpaca paper-trading API keys
+- Optional: an OpenAI-compatible LLM endpoint such as Ollama
 
 ## Setup
 
@@ -19,111 +66,71 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Environment
+## Important environment variables
 
 | Variable | Description |
 |---|---|
-| `ALPACA_API_KEY` | Alpaca API key id |
+| `ALPACA_API_KEY` | Alpaca API key ID |
 | `ALPACA_API_SECRET` | Alpaca API secret |
-| `ALPACA_PAPER` | `true` for paper trading (recommended) |
-| `ALPACA_DATA_FEED` | `test` (24/7 demo), `iex`, or `sip` |
-| `MARKET_BUFFER_SIZE` | Ring buffer size per symbol (default 200) |
-| `NEXT_PUBLIC_DEFAULT_SYMBOLS` | Comma-separated symbols for `iex`/`sip` feeds |
-| `COMPETITION_ENFORCE` | `true` to enforce the hackathon guardrails (official run); `false` warns only |
-| `COMPETITION_ACCOUNT_NUMBER` | Pins execution to the official $100k competition paper account |
+| `ALPACA_PAPER` | Use the paper-trading account; keep `true` by default |
+| `ALPACA_DATA_FEED` | `test`, `iex` or `sip` |
+| `NEXT_PUBLIC_DEFAULT_SYMBOLS` | Initial comma-separated watchlist |
+| `RISK_ENFORCE` | Enforce account and operational risk checks on opening orders |
+| `MCP_AUTH_TOKEN` | Protect `/api/mcp` and `/api/agent/run` with a bearer token |
+| `AGENT_ENABLED` | Enable or disable the agent cycle endpoint |
+| `AGENT_STORAGE` | `filesystem` locally or `blob` on Vercel |
+| `AGENT_LLM_BASE_URL` | Base URL of an OpenAI-compatible chat-completions API |
+| `AGENT_LLM_MODEL` | Model served by that endpoint |
 
-When `ALPACA_DATA_FEED=test`, the dashboard automatically uses the `FAKEPACA` test symbol on Alpaca's always-on test stream.
+See [.env.example](.env.example) for the complete configuration.
 
-## Scripts
-
-```bash
-pnpm dev       # development server
-pnpm build     # production build
-pnpm start     # run production build
-pnpm test      # unit tests
-pnpm lint      # biome check
-pnpm format    # biome format
-```
-
-## Adding a symbol
-
-Use the sidebar in the dashboard, or:
+## Commands
 
 ```bash
-curl -X POST http://localhost:3000/api/subscriptions \
-  -H 'Content-Type: application/json' \
-  -d '{"action":"add","symbols":["MSFT"]}'
+pnpm dev
+pnpm test
+pnpm lint
+pnpm build
+pnpm start
 ```
 
-Free tier limit: **10 symbols** with bars+quotes+trades (30 WebSocket channels).
+## Architecture
 
-## Changing timeframe
+```text
+Alpaca REST + WebSockets
+          |
+          v
+server adapters -> normalized domain models -> MarketHub / strategy layer
+          |                                      |
+          v                                      v
+      REST + SSE                          risk gates -> Alpaca orders
+          |
+          v
+ React dashboard (TanStack Query + Zustand)
+```
 
-The timeframe selector controls REST historical backfill. Live WebSocket bars are always 1-minute bars.
-
-## Hackathon compliance
-
-The official rules (Alpaca AI Trading Agents, lablab.ai) are restated as a
-checkable rulebook in **[docs/05-hackathon-rules.md](docs/05-hackathon-rules.md)**
-and enforced in code. Key points:
-
-- The official run uses a **dedicated $100,000 paper account** — never the
-  development account. Set `COMPETITION_ACCOUNT_NUMBER` to pin it.
-- Judged equity is the snapshot at **EOD Thursday 2026-09-03**, so the agent
-  treats Thursday's close as the deadline and does not open legs expiring after it.
-- `COMPETITION_ENFORCE=true` turns the guardrails from advisory into blocking.
-
-Check the live state at any time via the MCP tool `get_competition_status`.
-
-### Pre-event work & disclosures
-
-Per the hackathon FAQ, pre-event work is permitted and **must be disclosed**.
-Built before the 2026-08-28 09:30 ET kickoff:
-
-- The Next.js application shell, Tailwind/shadcn UI setup and tooling
-  (Biome, Vitest) — scaffolded from `create-next-app`.
-- The Alpaca market-data layer: the single-connection WebSocket hub
-  (`src/server/hub/`), payload normalization (`src/server/alpaca/`), the SSE
-  fan-out and the real-time dashboard (Phase 1).
-
-Built during the hackathon window: the options strategy layer
-(`src/domain/strategy.ts`, `src/server/strategies/`), the trading + MCP surface
-(`src/server/mcp/`, `/api/mcp`), the competition guardrails, the credit-spread
-backtest engine (`src/server/backtest/credit-spread*`), and the LLM decision
-agent (`src/server/agent/`, `src/server/llm/`, the Agent tab — see
-`docs/08-agent.md`). Commit history carries the dates.
-
-No third-party pre-existing library of our own is used beyond the public
-dependencies in `package.json`.
-
-### Why the Alpaca SDK plus our own MCP server
-
-The FAQ asks that submissions prefer Alpaca's MCP server or CLI and explain any
-SDK use. This project does both, deliberately:
-
-- **Order execution and market data go through the official Alpaca SDK**
-  (`@alpacahq/alpaca-trade-api` v4) because the agent needs a *single*
-  long-lived WebSocket market-data connection — Alpaca allows one per account,
-  and a subprocess MCP server plus our own dashboard would contend for it. The
-  SDK is the only way to own that connection in-process.
-- **The agent still drives everything over MCP.** We expose the same trading
-  surface — including options-native tools (`place_option_strategy`,
-  `get_option_chain`, `get_competition_status`) — as a Streamable-HTTP MCP
-  server at `/api/mcp` (`src/server/mcp/register-tools.ts`). The LLM agent
-  never calls the SDK directly; it calls MCP tools, exactly as it would with
-  `alpaca-mcp-server`.
-
-The result is the MCP workflow the rules ask for, on top of the official SDK,
-with the hub's one-connection constraint respected. See
-[docs/04-trading-and-mcp.md](docs/04-trading-and-mcp.md).
+Credentials and Alpaca connections stay on the server. `executeSignal()` remains the
+single strategy execution entry point so all opening trades cross the same validation and
+risk layers.
 
 ## Documentation
 
-- [docs/00-project-overview.md](docs/00-project-overview.md)
-- [docs/01-architecture.md](docs/01-architecture.md)
-- [docs/02-alpaca-integration.md](docs/02-alpaca-integration.md)
-- [docs/03-frontend-ui.md](docs/03-frontend-ui.md)
-- [docs/04-trading-and-mcp.md](docs/04-trading-and-mcp.md)
-- [docs/05-hackathon-rules.md](docs/05-hackathon-rules.md)
-- [docs/06-options-parameters.md](docs/06-options-parameters.md)
-- [AGENTS.md](AGENTS.md)
+- [Architecture](docs/01-architecture.md)
+- [Alpaca integration](docs/02-alpaca-integration.md)
+- [Frontend UI](docs/03-frontend-ui.md)
+- [Trading and MCP](docs/04-trading-and-mcp.md)
+- [Legacy competition compatibility](docs/05-legacy-competition.md)
+- [Options parameters, risk and operations](docs/06-options-parameters.md)
+- [Credit-spread strategy](docs/07-strategie-credit-spreads.md)
+- [LLM decision agent](docs/08-agent.md)
+- [Ascending-triangle strategy](docs/09-strategie-triangle.md)
+
+## Safety notes
+
+- The application can place orders; do not expose write routes publicly without an
+  authentication layer.
+- `COMPETITION_ENFORCE=false` and `RISK_ENFORCE=false` are development defaults, not safe
+  production defaults.
+- Closing orders are intentionally never blocked by opening-risk gates.
+- Historical option bars are not used for live pricing; entries use the latest option
+  quotes and snapshots.

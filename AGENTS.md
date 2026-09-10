@@ -1,77 +1,51 @@
 # Agent Coding Guidelines
 
-This repository is designed to be extended by AI coding agents (Cursor, Claude Code, Codex).
+This repository is designed to be extended by AI coding agents (Cursor, Claude Code,
+Codex). It is a personal Alpaca options-trading research project and can submit orders to
+the account configured in `.env`.
 
-## Hackathon rules — read first
+## Trading safety — read first
 
-`docs/05-hackathon-rules.md` is the binding restatement of the official Alpaca
-hackathon guidelines + FAQ. **Read it before changing anything that places
-orders, schedules the agent, or goes in the submission.** The rules that bite
-most often:
-
-- **Official account.** A dedicated $100k paper account, never the testing one.
-  `COMPETITION_ACCOUNT_NUMBER` pins it; `assertCompetitionAccount()` refuses to
-  trade any other. Judged on **equity**, never cash.
-- **The deadline is Thursday.** Judged equity is the snapshot at **EOD Thu
-  2026-09-03 (20:00Z)**, not Friday's close. Do not open a position whose legs
-  expire after it.
-- **Scoring window.** Opening trades count only between Mon 2026-08-31 13:30Z
-  and the Thursday snapshot. Closing trades are always allowed.
-- **No trailing stops on options** — equities only. Exits are the agent's job.
-- **Free tier = indicative options feed.** Latest quotes/chains are real-time;
-  historical option bars are 15-min delayed. Price off quotes, not bars.
-- **Disclose pre-event work** in the README ([R17]) — it is a rules requirement,
-  not housekeeping.
-
-Enforcement lives in `src/config/competition.ts`,
-`src/server/strategies/guardrails.ts` and `src/server/alpaca/account-guard.ts`.
-`COMPETITION_ENFORCE=false` (the dev default) downgrades violations to warnings;
-the official run sets it to `true`. Never work around a guardrail — if a rule
-reading is wrong, fix the rule in `docs/05-hackathon-rules.md` and the code
-together.
-
-The **account** risk layer is separate: `src/config/risk.ts` (parameters + pure
-predicates) and `src/server/risk/` (kill switch, data circuit breaker, execution
-window, portfolio caps, decision log, reconciliation), gated by `RISK_ENFORCE`.
-Both layers run from `executeSignal()`, which stays the single execution entry
-point. Add a new risk control there, never at a call site.
-
-`docs/06-options-parameters.md` is the companion: the rules say what is
-forbidden, that file says how the agent is **calibrated** inside what is allowed
-— universe filters, derived volatility signals, entry/exit parameters, portfolio
-risk caps, and the operational layer (kill switch, circuit breaker, decision
-log, reconciliation). Every item carries a status — `enforced`, `default`, or
-`gap` — so the difference between a stated parameter and a checked one stays
-visible. Read it before adding a strategy, a sizing rule, or a risk control.
+- Keep development and unreviewed deployments on `ALPACA_PAPER=true`.
+- `executeSignal()` in `src/server/strategies/execute.ts` is the single strategy execution
+  entry point. Add new risk controls there, never only at a call site.
+- Closing orders must remain possible even when opening-risk gates are tripped.
+- The account risk layer lives in `src/config/risk.ts` and `src/server/risk/`, gated by
+  `RISK_ENFORCE`. Read `docs/06-options-parameters.md` before adding a strategy, sizing
+  rule or risk control.
+- The project deliberately requires every `StrategySignal` to resolve to option legs on
+  its underlying. `StrategySignalSchema` enforces this.
+- Legacy event dates and account checks still exist in `src/config/competition.ts`,
+  `src/server/strategies/guardrails.ts` and `src/server/alpaca/account-guard.ts`. Read
+  `docs/05-legacy-competition.md` before changing or removing them. The archived agent's
+  entry path remains closed after the historical event window. The historical rules text
+  remains in `docs/05-hackathon-rules.md`.
+- Never work around a guardrail to make an order pass. Correct the configuration, rule and
+  tests together.
 
 ## Skill routing — pick the resource before acting
 
-Two skill sets are installed: BMAD-METHOD (from `bmad-code-org/BMAD-METHOD` via
-`npx skills add`; canonical copies in `.agents/skills/`, symlinked into
-`.claude/skills/`) and the vendored Alpaca skills (see *Alpaca Skills*).
-Classify every request first, then invoke the matching skill. In Claude Code a
-`UserPromptSubmit` hook (`.claude/hooks/skill-router.sh`) repeats this on every
-prompt. The table mirrors the `bmad` skill's own routing
-(`.agents/skills/bmad/references/help.md`) — if they disagree, that file wins.
+Two skill sets are installed: BMAD-METHOD (canonical copies in `.agents/skills/`, linked
+into `.claude/skills/`) and the vendored Alpaca skills. Classify every request first, then
+invoke the matching skill. The table mirrors
+`.agents/skills/bmad/references/help.md`; if they disagree, that file wins.
 
 | Request | Resource |
 | --- | --- |
 | Plain question, typo, formatting, ignore-file or config hygiene | Act directly — no workflow |
-| Feature, bug fix, or meaningful change that fits one session | `bmad-build` |
-| Work spanning 2-10 sessions (an epic) | `bmad-spec` → stories → `bmad-build` per story → `bmad-retrospective` |
-| Project-sized work (a new product area) | `bmad` → brief or PRFAQ → `bmad-prd` → `bmad-architecture` → `bmad-create-epics-and-stories` → `bmad-sprint-planning` |
-| "Where do I start?", "what's next?", unsure | `bmad` |
-| The user asks to *review* a diff, PR or document | `bmad-code-review` (code) or `bmad-review` (any artifact) |
-| Significant change of direction mid-sprint | `bmad-correct-course` |
-| Research, or choosing between options | `bmad-deep-recon` |
-| Anything touching the Alpaca API (orders, market data, backtests) | The matching `alpaca-*` skill — in addition to `bmad-build` when it means writing code |
+| Feature, bug fix or meaningful one-session change | `bmad-build` |
+| Work spanning 2–10 sessions | `bmad-spec`, stories, `bmad-build`, then `bmad-retrospective` |
+| Project-sized product area | `bmad`, brief/PRFAQ, PRD, architecture, epics and sprint planning |
+| Unsure where to start | `bmad` |
+| Review a diff, PR or document | `bmad-code-review` or `bmad-review` |
+| Significant direction change | `bmad-correct-course` |
+| Research or choosing between options | `bmad-deep-recon` |
+| Alpaca API, orders, market data or backtests | Matching `alpaca-*` skill, plus `bmad-build` when writing code |
 | Git housekeeping — sync, rebase, open a PR, clean up merged branches | Act directly, following `docs/10-git-workflow.md` |
 
-Precedence: the hackathon rules above and the *Hard rules* below override any
-BMAD workflow, and execution changes still go through `executeSignal()`. This
-file is maintained by hand — do not run `bmad-project-context` over it. BMAD
-runtime config lives in `_bmad/`, workflow output (specs, stories) in
-`_bmad-output/`; both need `uv`. Update with `npx skills update`.
+The safety rules above and the hard rules below override workflow guidance. This file is
+maintained by hand; do not run `bmad-project-context` over it. BMAD runtime configuration
+lives in `_bmad/` and workflow output belongs in `_bmad-output/`.
 
 ## Git & collaboration — two developers, one repo
 
@@ -114,17 +88,22 @@ by hand.
 
 - Next.js 16 App Router, React 19, TypeScript strict
 - Tailwind CSS v4 + shadcn/ui
-- Zustand (real-time UI state), TanStack Query (REST)
+- Zustand for real-time UI state, TanStack Query for REST state
 - Alpaca SDK v4 (`@alpacahq/alpaca-trade-api`)
 - Biome for lint/format, Vitest for tests
 
 ## Hard rules
 
-1. **One Alpaca WebSocket per process, per data product.** Use `getMarketHub()` from `src/server/hub`. Never connect from the browser. The hub owns the equity/crypto stream plus one dedicated options stream (`optionStream`, `feed: "indicative"`) that only connects when an option is subscribed.
-2. **Server/client boundary.** Anything under `src/server/` is server-only. Import `server-only` at the top of those modules.
-3. **Normalize Alpaca payloads once.** Only `src/server/alpaca/normalize.ts` may know Alpaca market-data short keys (`T`, `S`, `p`, ...). Trading responses (orders/positions/account) are modelled camelCase by the SDK but type money as strings — `src/server/alpaca/normalize-trading.ts` is the single boundary that turns those into numeric domain models.
-4. **No paper/live toggle in UI.** Display read-only badges from `/api/clock`.
-5. **Route handlers touching the hub** must export:
+1. **One Alpaca WebSocket per process, per data product.** Use `getMarketHub()` from
+   `src/server/hub`. Never connect from the browser. The hub owns the equity/crypto stream
+   plus one options stream (`feed: "indicative"`) that connects only when needed.
+2. **Server/client boundary.** Anything under `src/server/` is server-only. Import
+   `server-only` at the top of those modules.
+3. **Normalize Alpaca payloads once.** Only `src/server/alpaca/normalize.ts` may know
+   market-data short keys. Trading responses pass through
+   `src/server/alpaca/normalize-trading.ts`.
+4. **No paper/live toggle in the UI.** Display read-only state from `/api/clock`.
+5. **Hub route runtime.** Route handlers touching the hub must export:
 
 ```typescript
 export const runtime = "nodejs";
@@ -156,116 +135,105 @@ pnpm build
 Start with the Git preflight (`docs/10-git-workflow.md` §2): your own branch
 from a fresh `origin/main`.
 
-1. Domain types/schemas first (`src/domain/` — e.g. `trading.ts`, `strategy.ts`)
-2. Server integration (`src/server/alpaca/`, `src/server/hub/`)
-3. API route if needed (`src/app/api/`)
-4. Client store/hook (`src/lib/`)
-5. UI component (`src/components/`)
-6. Update docs in `docs/` if architecture or Alpaca behavior changes
-7. If the change touches execution or the submission, re-check it against
-   `docs/05-hackathon-rules.md`
+1. Domain types and schemas first (`src/domain/`).
+2. Server integration (`src/server/alpaca/`, `src/server/hub/`).
+3. API route if needed (`src/app/api/`).
+4. Client store or hook (`src/lib/`).
+5. UI component (`src/components/`).
+6. Update the relevant document under `docs/` when behaviour or architecture changes.
+7. Re-check every execution change against the shared risk gate and
+   `docs/05-legacy-competition.md` / `docs/05-hackathon-rules.md` when touching
+   competition-era guards.
 
-## Trading & MCP
+## Trading and MCP
 
-Manual order execution and the MCP server are documented in `docs/04-trading-and-mcp.md`.
+Manual order execution and the MCP server are documented in
+`docs/04-trading-and-mcp.md`.
 
-- Domain: `src/domain/trading.ts` (types + Zod schemas: `PlaceOrderSchema`, `ReplaceOrderSchema`, …).
-- Server: `src/server/alpaca/trading.ts` (thin `client.trading.*` wrapper), `normalize-trading.ts`.
-- REST: `/api/account`, `/api/positions[/:symbol]`, `/api/orders[/:id]`.
-- MCP: `/api/mcp` (Streamable HTTP via `mcp-handler`). Tools are registered in
-  `src/server/mcp/register-tools.ts` — reuse that module for any new transport.
-- UI: `src/components/trading/` (`TradingPanel`), wired into the dashboard "Trading" tab.
+- Domain: `src/domain/trading.ts`
+- Server: `src/server/alpaca/trading.ts` and `normalize-trading.ts`
+- REST: `/api/account`, `/api/positions[/:symbol]`, `/api/orders[/:id]`
+- MCP: `/api/mcp` via `mcp-handler`
+- Tool registration: `src/server/mcp/register-tools.ts`
+- UI: `src/components/trading/`
+
+Reuse `registerTradingTools()` for any new MCP transport.
 
 ## Backtests
 
-Three independent engines under `src/server/backtest/`, one tab in the UI
-(`BacktestWorkspace`), one shared Black-Scholes module:
+Three independent engines live under `src/server/backtest/` and share the pure
+`black-scholes.ts` module:
 
 | Engine | Strategy | Domain | Route |
 | --- | --- | --- | --- |
-| `triangle-engine.ts` | Ascending-triangle breakout → call spread / long call, daily swing | `src/domain/backtest-triangle.ts` | `/api/backtest/triangle` |
-| `engine.ts` | ORB → 0DTE debit vertical | `src/domain/backtest.ts` | `/api/backtest` |
-| `credit-spread.ts` | 1-2 DTE short credit spreads (archived strategy) | `src/domain/backtest-credit.ts` | `/api/backtest/credit` |
+| `triangle-engine.ts` | Ascending-triangle breakout to call spread or long call | `src/domain/backtest-triangle.ts` | `/api/backtest/triangle` |
+| `engine.ts` | ORB to 0DTE debit vertical | `src/domain/backtest.ts` | `/api/backtest` |
+| `credit-spread.ts` | 1–2 DTE short credit spreads, archived strategy | `src/domain/backtest-credit.ts` | `/api/backtest/credit` |
 
-**Strategy status (2026-09-10).** The put-credit-spread strategy the live agent
-ran through the hackathon is **archived**: git tag `archive/credit-spread-agent`,
-banners on `docs/07` and `docs/08`. Its code is still in place — the live agent
-in `src/server/agent/` has *not* been switched. The research track is now the
-ascending-triangle breakout (`docs/09-strategie-triangle.md`); read §6–7 there
-before wiring it live: no variant of its backtest shows an edge yet.
+The credit-spread agent is archived at tag `archive/credit-spread-agent`; its code remains
+wired but cannot open beyond its historical window. The active research track is the
+ascending-triangle backtest in `docs/09-strategie-triangle.md`. It is backtest-only and no
+tested variant currently demonstrates an edge, so do not wire it live without new evidence.
 
-The triangle signal (`triangle.ts`) is pure and lookahead-free — a swing high
-counts only `pivotStrength` bars after it prints, and the tests check that the
-detector returns the same breakout on a series truncated at that bar.
+Read `docs/07-strategie-credit-spreads.md` before changing the credit engine. Its result is
+highly sensitive to `ivMultiplier`, an assumption that cannot be recovered from underlying
+bars. The triangle detector is pure and lookahead-free; its tests verify the same breakout
+on a series truncated at the detection bar.
 
-`black-scholes.ts` is pure and shared — no `server-only`, so it stays testable
-and reusable. Read `docs/07-strategie-credit-spreads.md` before touching the
-credit engine: §6 lists what the model does *not* capture, and §7 shows that the
-whole result hinges on `ivMultiplier`, which is an assumption rather than
-something the backtest can discover.
+All three engines measure time to expiry in trading minutes (`tradingYears`) on the same
+252-session calendar used to annualise realised volatility. Do not replace it with calendar
+time when pricing short-dated structures.
 
-All three engines measure time to expiry in **trading minutes** (`tradingYears`),
-on the same 252-session calendar realised vol is annualised on. Do not reach for
-`yearsBetween` when pricing: a 6.5-hour session is 1/252 of a trading year but
-1/1348 of a calendar one, so calendar time understates `t` by ~5x on a 0DTE and
-prices the structure far too cheap. `engine.ts` did exactly that until
-2026-08-30; correcting it flipped the ORB backtest from +12,650 to −19,472 at
-its calibrated settings.
+## Strategy and agent extension points
 
-## Phase 2 extension point
+Strategies live in `src/server/strategies/` and emit `StrategySignal` values. Contract
+selection happens in `select-contract.ts`; execution happens in `execute.ts` as a
+single-leg option order or an `mleg` spread.
 
-Trading strategies live in `src/server/strategies/`. See the README there for the
-`Strategy` interface. Strategies emit signals; execution goes through
-`src/server/alpaca/trading.ts`.
-
-**Options mandate (hackathon rule).** Every `StrategySignal` must resolve to one
-or more option legs (OCC symbols) on its underlying — `StrategySignalSchema`
-(`src/domain/strategy.ts`) rejects equity/crypto legs. Strategies output a
-directional thesis + `ContractSelection` (target delta / DTE window / liquidity
-floor); `src/server/strategies/select-contract.ts` resolves it to contracts and
-`src/server/strategies/execute.ts` submits a single-leg option order or an `mleg`
-spread. Multi-leg order support lives in `PlaceOrderSchema` (`legs[]` →
-`orderClass: "mleg"`).
+The archived autonomous agent lives in `src/server/agent/` and is documented in
+`docs/08-agent.md`. Its mechanical strategy builds a SPY bull put spread; the LLM may only
+veto an entry or close early in the dead zone. Profit target, stop, time close, sizing and
+risk checks remain deterministic. A live triangle `Strategy` is not built yet.
 
 ## Alpaca Skills
 
 Vendored from [`alpacahq/alpaca-skills`](https://github.com/alpacahq/alpaca-skills)
 (Apache-2.0). Canonical copies live in `.claude/skills/<name>/SKILL.md`;
-`.cursor/skills` is a symlink to that directory, so Cursor also sees the BMAD
-skills linked there. **Codex / other agents:** read the matching `SKILL.md`
-directly before doing the task it covers (BMAD skills are also in `.agents/skills/`).
-
-Each skill is a `SKILL.md` (some with a `reference.md`) of step-by-step
-instructions, guardrails, and reporting standards. Load one on demand — do not
-preload all of them.
+`.cursor/skills` links to that directory. Codex and other agents must read the matching
+`SKILL.md` directly before doing a covered task. Load skills on demand, not all at once.
 
 | Skill | When to use |
 | --- | --- |
-| `alpaca-trading-backtest` | Deterministic historical backtests from a start/end date + strategy concept |
-| `alpaca-trading-paper-trading` | Take a strategy signal and execute it as a paper trade (generic, SDK/API) |
-| `alpaca-trading-paper-trading-cli` | Same, via the Alpaca CLI |
-| `alpaca-trading-paper-trading-mcp` | Same, via the Alpaca Trading API MCP server |
+| `alpaca-trading-backtest` | Deterministic historical backtests |
+| `alpaca-trading-paper-trading` | Execute a strategy signal as a paper trade |
+| `alpaca-trading-paper-trading-cli` | Paper trading through Alpaca CLI |
+| `alpaca-trading-paper-trading-mcp` | Paper trading through Alpaca MCP |
 | `alpaca-broker-integration` | Broker API integration setup |
-| `alpaca-broker-account-onboarding` | Broker account creation + KYC |
+| `alpaca-broker-account-onboarding` | Broker account creation and KYC |
 | `alpaca-broker-funding-transfers` | ACH/wire funding and transfers |
 | `alpaca-broker-journals` | JNLC/JNLS journals between accounts |
-| `alpaca-broker-trading-orders` | Trading on behalf of Broker API accounts |
-| `alpaca-broker-market-data` | Market data for Broker API |
-| `alpaca-broker-sse-events` | Consuming Broker SSE event streams |
-| `alpaca-broker-reconciliation-idempotency` | Reconciliation + idempotency patterns |
-| `alpaca-broker-rate-limits-resilience` | Rate-limit handling + retry/resilience |
-| `alpaca-broker-money-precision` | Money + numeric precision handling |
+| `alpaca-broker-trading-orders` | Broker API account trading |
+| `alpaca-broker-market-data` | Broker API market data |
+| `alpaca-broker-sse-events` | Broker SSE event streams |
+| `alpaca-broker-reconciliation-idempotency` | Reconciliation and idempotency |
+| `alpaca-broker-rate-limits-resilience` | Retry and rate-limit handling |
+| `alpaca-broker-money-precision` | Money and numeric precision |
 
-Note: this project trades through `src/server/alpaca/trading.ts` and its own
-`/api/mcp` server, not the Alpaca CLI — prefer `alpaca-trading-paper-trading`
-for execution guidance and treat the CLI/MCP skills as reference.
+This application executes through `src/server/alpaca/trading.ts` and its own `/api/mcp`
+server. Prefer `alpaca-trading-paper-trading` for execution guidance; treat the CLI and MCP
+skills as references unless the task explicitly targets those transports.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+This version has breaking changes — APIs, conventions, and file structure may all differ
+from your training data. Read the relevant guide in `node_modules/next/dist/docs/`
+(resolved from this file's directory; in monorepos the `next` package may not be visible
+from the repo root) before writing any code. Heed deprecation notices.
 
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+This block is written and re-added by `next dev` — verify at
+`node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only
+re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->

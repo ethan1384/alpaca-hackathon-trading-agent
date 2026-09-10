@@ -137,9 +137,9 @@ export function registerTradingTools(server: McpServer): void {
   server.registerTool(
     "get_competition_status",
     {
-      title: "Competition status",
+      title: "Legacy event status",
       description:
-        "Where we are in the hackathon: phase (pre | scoring | snapshot-passed | closed), hours left until the judged equity snapshot (EOD Thu 2026-09-03), the latest option expiration that still settles inside the measured window, and whether the connected account is the official competition paper account. Call this before opening any position — it decides whether a trade can still be scored. Rules: docs/05-hackathon-rules.md.",
+        "Compatibility status for the original 2026 event window: phase, time to the historical snapshot, expiration deadline and pinned paper-account check. The personal project retains this tool while the fixed calendar is migrated. See docs/05-legacy-competition.md.",
       inputSchema: z.object({}),
     },
     async () => {

@@ -25,7 +25,7 @@ const envSchema = z.object({
    * Competition mode. When `true`, the hackathon guardrails
    * (`src/server/strategies/guardrails.ts`) throw instead of warning: opening
    * trades are refused outside the scored window and option legs expiring past
-   * the judged snapshot are rejected. See `docs/05-hackathon-rules.md`.
+   * the judged snapshot are rejected. See `docs/05-legacy-competition.md`.
    *
    * The official run sets this to `true`; development leaves it off.
    */

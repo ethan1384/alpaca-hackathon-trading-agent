@@ -12,8 +12,8 @@ import type { OptionOrderLeg, StrategySignal } from "@/domain/strategy";
 import { parseOptionSymbol } from "@/domain/types";
 
 /**
- * Hackathon guardrails applied to every signal before it becomes a real order.
- * The rules themselves live in `docs/05-hackathon-rules.md`; the dates and DTE
+ * Legacy event guardrails applied to every signal before it becomes a real order.
+ * Their current compatibility status lives in `docs/05-legacy-competition.md`; the dates and DTE
  * maths live in `src/config/competition.ts`. This module only decides what to do
  * about a breach.
  *

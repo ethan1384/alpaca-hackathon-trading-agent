@@ -115,7 +115,7 @@ export function signalToOrder(signal: StrategySignal): PlaceOrderInput {
 /**
  * Resolve (if needed) then submit a strategy signal as a real Alpaca order.
  * This is the single execution entry point for the strategy / agent layer, and
- * therefore where both guardrail layers run: the hackathon rules
+ * therefore where both guardrail layers run: legacy event compatibility checks
  * (`./guardrails`, docs/05) and the account risk caps (`@/server/risk`, docs/06).
  */
 export async function executeSignal(
@@ -144,7 +144,7 @@ export async function executeSignal(
 
   try {
     // Competition rules first, so a breach costs nothing (no chain fetch, no
-    // order). See docs/05-hackathon-rules.md.
+    // order). See docs/05-legacy-competition.md.
     assertSignalAllowed(signal);
 
     const legs = signal.resolvedLegs?.length

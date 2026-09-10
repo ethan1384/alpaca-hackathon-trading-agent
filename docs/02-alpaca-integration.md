@@ -103,4 +103,4 @@ SDK v4 handles WebSocket backoff and re-subscription. The hub listens for `onRec
 
 URL: `wss://stream.data.alpaca.markets/v2/test`
 
-Symbol: `FAKEPACA` — works 24/7 for hackathon demos.
+Symbol: `FAKEPACA` — works 24/7 for development and off-hours demos.

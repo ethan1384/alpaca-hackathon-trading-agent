@@ -9,7 +9,7 @@ import { getTradingAccount as defaultGetTradingAccount } from "./trading";
  * [R1]/[R2] The official P&L must be measured on a dedicated $100,000 paper
  * account, never the development account. A stale `.env` is the realistic way
  * that goes wrong, so pin the account number in `COMPETITION_ACCOUNT_NUMBER`
- * and check it before trading. See `docs/05-hackathon-rules.md`.
+ * and check it before trading. See `docs/05-legacy-competition.md`.
  */
 
 export interface AccountGuardResult {

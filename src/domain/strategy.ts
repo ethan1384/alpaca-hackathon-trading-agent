@@ -5,7 +5,7 @@ import { formatOptionLabel, isOptionSymbol, parseOptionSymbol } from "./types";
 /**
  * The strategy signal is the single output contract of every trading strategy.
  *
- * Hackathon rule — **all strategies must incorporate options trading**. That
+ * Project rule — **all strategies must incorporate options trading**. That
  * rule is enforced here, at the type boundary: a `StrategySignal` describes a
  * directional thesis on an underlying that resolves to one or more **option**
  * contracts (OCC symbols). `StrategySignalSchema` rejects any signal whose legs

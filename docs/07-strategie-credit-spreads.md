@@ -108,7 +108,7 @@ L'ancienne logique (gate par jambe, commit immédiat) est conservée dans
 | Mercredi 2 septembre | Entrée **uniquement si l'échéance disponible est le jeudi 3** |
 | Jeudi 3 septembre | Aucune entrée. Clôture uniquement |
 
-Contrainte dure de `docs/05-hackathon-rules.md` : l'équity jugée est le snapshot
+Contrainte historique décrite dans `docs/05-legacy-competition.md` : l'equity jugée était le snapshot
 du **jeudi 3 à 20:00Z**. Aucune jambe ne doit expirer après.
 
 ---
