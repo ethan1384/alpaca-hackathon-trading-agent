@@ -1,0 +1,8 @@
+# Team policy — two developers share this repo. See docs/10-git-workflow.md.
+
+[workflow]
+
+persistent_facts = [
+  "file:{project-root}/docs/10-git-workflow.md",
+  "sprint-status.yaml is shared by both developers: change it on your own branch and through a PR, touch only the lines of your own stories, and on a conflict keep both sides with each story's most advanced status (§7).",
+]

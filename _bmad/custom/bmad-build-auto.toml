@@ -1,0 +1,25 @@
+# Team policy — two developers share this repo. See docs/10-git-workflow.md.
+# Sparse override: only the fields below change; everything else stays default.
+
+[workflow]
+
+persistent_facts = ["file:{project-root}/docs/10-git-workflow.md"]
+
+activation_steps_prepend = [
+  """Git preflight (docs/10-git-workflow.md §2). Run `git fetch --prune origin` now. \
+Apply the rest at step 01's version-control sanity check: if the working tree is dirty, \
+HALT with status `blocked` — never stash, reset or discard existing work. If the current \
+branch is `main` or does not carry the user's prefix (§1), create \
+`<prefix>/<type>/<slug>` from `origin/main` with the slug step 01 gives the spec (story \
+key first when there is one), then `git push -u origin HEAD` to claim it. If a remote \
+branch with another prefix already ends in that slug, HALT with status `blocked` and \
+blocking condition `slug claimed by a colleague's branch`. Record in the run report any \
+file the colleague's open branches already touch.""",
+]
+
+on_complete = """Git handoff (docs/10-git-workflow.md §5). Team policy authorizes pushing \
+the current branch only when it carries the user's prefix — never `main`, never \
+someone else's branch. Rebase on `origin/main` first; if the rebase conflicts outside the \
+files this run changed, run `git rebase --abort` and report `blocked`. Push with \
+`git push -u origin HEAD` (`--force-with-lease` after a rebase) and include the \
+pull-request URL from §5 in the report. Never merge."""

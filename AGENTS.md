@@ -65,12 +65,50 @@ prompt. The table mirrors the `bmad` skill's own routing
 | Significant change of direction mid-sprint | `bmad-correct-course` |
 | Research, or choosing between options | `bmad-deep-recon` |
 | Anything touching the Alpaca API (orders, market data, backtests) | The matching `alpaca-*` skill — in addition to `bmad-build` when it means writing code |
+| Git housekeeping — sync, rebase, open a PR, clean up merged branches | Act directly, following `docs/10-git-workflow.md` |
 
 Precedence: the hackathon rules above and the *Hard rules* below override any
 BMAD workflow, and execution changes still go through `executeSignal()`. This
 file is maintained by hand — do not run `bmad-project-context` over it. BMAD
 runtime config lives in `_bmad/`, workflow output (specs, stories) in
 `_bmad-output/`; both need `uv`. Update with `npx skills update`.
+
+## Git & collaboration — two developers, one repo
+
+Two people, each with their own agent, work here in parallel.
+`docs/10-git-workflow.md` is the binding workflow — **read it before creating a
+branch, committing, rebasing or pushing.** The rules that prevent collisions:
+
+- **Never commit or push to `main`.** Work reaches `main` only through a pull
+  request, squash-merged by a human. Agents never merge.
+- **One branch per spec/story: `<prefix>/<type>/<slug>`.** `prefix` is the first
+  word of `git config user.name`, lowercased (`ethan/feat/triangle-30min-triggers`);
+  `slug` is the BMAD spec slug. Create it from a fresh `origin/main` and push it at
+  once (`git push -u origin HEAD`) — the remote branch is the claim your colleague sees.
+- **Preflight every task:** `git fetch --prune origin`; a dirty tree means stop and
+  ask; a colleague's branch with the same slug means stop; warn about files their
+  open branches already touch.
+- **Only touch branches with your own prefix.** Never commit to, rebase, push or
+  delete a colleague's branch.
+- **Stage explicit paths** — never `git add -A` / `git add .` — and rebase on
+  `origin/main` before the PR. Push your own branch with `--force-with-lease`, never
+  `--force`.
+- **Shared BMAD files:** a spec lives on its author's branch; in
+  `sprint-status.yaml` touch only your own story's line; `deferred-work.md` is
+  append-only (`merge=union` in `.gitattributes`); `_bmad/custom/*.toml` is team
+  policy (PR only), `*.user.toml` is personal and gitignored.
+- This policy is standing authorization for exactly three things: create your
+  branch, commit on it, push it. Anything else that writes to the remote, or
+  discards local work, goes through the human.
+
+Enforcement: in Claude Code, a `PreToolUse` hook (`.claude/hooks/git-guard.mjs`)
+denies pushes to `main`, force pushes, pushing or deleting another prefix's
+branch, commits on `main` and `--no-verify`, and asks the human before
+`reset --hard`, `clean -f`, `checkout -- <path>`, `restore`, `stash drop|clear`
+and `branch -D`. The BMAD workflows `bmad-build`, `bmad-build-auto`, `bmad-spec`,
+`bmad-code-review` and `bmad-sprint-planning` load `docs/10` through team
+overrides in `_bmad/custom/`. Codex and Cursor only have this section — apply it
+by hand.
 
 ## Stack
 
@@ -105,12 +143,18 @@ pnpm build
 
 ## Before merging
 
-1. Run `pnpm test`
-2. Run `pnpm lint`
-3. Run `pnpm build`
-4. Verify no secrets in commits (`.env` is gitignored)
+1. Rebase on `origin/main` (`git fetch origin && git rebase origin/main`)
+2. Run `pnpm test`
+3. Run `pnpm lint`
+4. Run `pnpm build`
+5. Verify no secrets in commits (`.env` is gitignored)
+6. Push your own branch and open a PR; a human squash-merges it — never push to
+   `main` (`docs/10-git-workflow.md` §5)
 
 ## Adding a feature
+
+Start with the Git preflight (`docs/10-git-workflow.md` §2): your own branch
+from a fresh `origin/main`.
 
 1. Domain types/schemas first (`src/domain/` — e.g. `trading.ts`, `strategy.ts`)
 2. Server integration (`src/server/alpaca/`, `src/server/hub/`)

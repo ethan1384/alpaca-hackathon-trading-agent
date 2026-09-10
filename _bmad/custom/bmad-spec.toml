@@ -1,0 +1,8 @@
+# Team policy — two developers share this repo. See docs/10-git-workflow.md.
+
+[workflow]
+
+persistent_facts = [
+  "file:{project-root}/docs/10-git-workflow.md",
+  "A spec is written and committed on its author's own `<prefix>/<type>/<slug>` branch, never on `main`; stories split from it are claimed one branch each (§1, §7).",
+]

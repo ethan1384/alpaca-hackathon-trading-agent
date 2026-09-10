@@ -51,3 +51,6 @@ next-env.d.ts
 
 # BMAD transient render output
 _bmad/render/
+
+# BMAD personal overrides — team overrides (_bmad/custom/*.toml) are committed
+_bmad/custom/*.user.toml

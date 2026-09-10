@@ -1,0 +1,3 @@
+# BMAD append-only log: both developers add entries at the end — keep both sides
+# instead of conflicting (docs/10-git-workflow.md §7).
+_bmad-output/implementation-artifacts/deferred-work.md merge=union

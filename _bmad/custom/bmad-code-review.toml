@@ -1,0 +1,8 @@
+# Team policy — two developers share this repo. See docs/10-git-workflow.md.
+
+[workflow]
+
+persistent_facts = [
+  "file:{project-root}/docs/10-git-workflow.md",
+  "Default review scope for a branch is its own changes: `git fetch origin` then `git diff origin/main...HEAD` (or `origin/main...origin/<branch>` for the colleague's PR) — never the colleague's unrelated work.",
+]
