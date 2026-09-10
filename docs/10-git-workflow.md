@@ -117,7 +117,7 @@ Avec un squash merge, les commits de la branche ne sont pas des ancêtres de `ma
 | `_bmad-output/planning-artifacts/*` (PRD, architecture, epics) | Partagés : modifier sur sa branche, PR dédiée, prévenir l'autre. |
 | `_bmad/custom/*.toml` | Politique d'équipe : PR uniquement. |
 | `_bmad/custom/*.user.toml` | Personnel, ignoré par git. |
-| `AGENTS.md`, `docs/05-hackathon-rules.md`, ce fichier, `.claude/settings.json`, `.claude/hooks/` | Règles communes : PR dédiée, relue par l'autre. |
+| `AGENTS.md`, `docs/05-legacy-competition.md`, ce fichier, `.claude/settings.json`, `.claude/hooks/` | Règles communes : PR dédiée, relue par l'autre. |
 
 ## §8 Interdits
 

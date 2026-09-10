@@ -18,34 +18,38 @@ the account configured in `.env`.
 - Legacy event dates and account checks still exist in `src/config/competition.ts`,
   `src/server/strategies/guardrails.ts` and `src/server/alpaca/account-guard.ts`. Read
   `docs/05-legacy-competition.md` before changing or removing them. The archived agent's
-  entry path remains closed after the historical event window. The historical rules text
-  remains in `docs/05-hackathon-rules.md`.
+  entry path remains closed after the historical event window.
 - Never work around a guardrail to make an order pass. Correct the configuration, rule and
   tests together.
 
 ## Skill routing — pick the resource before acting
 
-Two skill sets are installed: BMAD-METHOD (canonical copies in `.agents/skills/`, linked
-into `.claude/skills/`) and the vendored Alpaca skills. Classify every request first, then
-invoke the matching skill. The table mirrors
-`.agents/skills/bmad/references/help.md`; if they disagree, that file wins.
+Two skill sets are installed: BMAD-METHOD (from `bmad-code-org/BMAD-METHOD` via
+`npx skills add`; canonical copies in `.agents/skills/`, symlinked into
+`.claude/skills/`) and the vendored Alpaca skills (see *Alpaca Skills*).
+Classify every request first, then invoke the matching skill. In Claude Code a
+`UserPromptSubmit` hook (`.claude/hooks/skill-router.sh`) repeats this on every
+prompt. The table mirrors the `bmad` skill's own routing
+(`.agents/skills/bmad/references/help.md`) — if they disagree, that file wins.
 
 | Request | Resource |
 | --- | --- |
 | Plain question, typo, formatting, ignore-file or config hygiene | Act directly — no workflow |
-| Feature, bug fix or meaningful one-session change | `bmad-build` |
-| Work spanning 2–10 sessions | `bmad-spec`, stories, `bmad-build`, then `bmad-retrospective` |
-| Project-sized product area | `bmad`, brief/PRFAQ, PRD, architecture, epics and sprint planning |
-| Unsure where to start | `bmad` |
-| Review a diff, PR or document | `bmad-code-review` or `bmad-review` |
-| Significant direction change | `bmad-correct-course` |
-| Research or choosing between options | `bmad-deep-recon` |
-| Alpaca API, orders, market data or backtests | Matching `alpaca-*` skill, plus `bmad-build` when writing code |
+| Feature, bug fix, or meaningful change that fits one session | `bmad-build` |
+| Work spanning 2-10 sessions (an epic) | `bmad-spec` → stories → `bmad-build` per story → `bmad-retrospective` |
+| Project-sized work (a new product area) | `bmad` → brief or PRFAQ → `bmad-prd` → `bmad-architecture` → `bmad-create-epics-and-stories` → `bmad-sprint-planning` |
+| "Where do I start?", "what's next?", unsure | `bmad` |
+| The user asks to *review* a diff, PR or document | `bmad-code-review` (code) or `bmad-review` (any artifact) |
+| Significant change of direction mid-sprint | `bmad-correct-course` |
+| Research, or choosing between options | `bmad-deep-recon` |
+| Anything touching the Alpaca API (orders, market data, backtests) | The matching `alpaca-*` skill — in addition to `bmad-build` when it means writing code |
 | Git housekeeping — sync, rebase, open a PR, clean up merged branches | Act directly, following `docs/10-git-workflow.md` |
 
-The safety rules above and the hard rules below override workflow guidance. This file is
-maintained by hand; do not run `bmad-project-context` over it. BMAD runtime configuration
-lives in `_bmad/` and workflow output belongs in `_bmad-output/`.
+Precedence: the safety rules above and the *Hard rules* below override any
+BMAD workflow, and execution changes still go through `executeSignal()`. This
+file is maintained by hand — do not run `bmad-project-context` over it. BMAD
+runtime config lives in `_bmad/`, workflow output (specs, stories) in
+`_bmad-output/`; both need `uv`. Update with `npx skills update`.
 
 ## Git & collaboration — two developers, one repo
 
@@ -142,8 +146,7 @@ from a fresh `origin/main`.
 5. UI component (`src/components/`).
 6. Update the relevant document under `docs/` when behaviour or architecture changes.
 7. Re-check every execution change against the shared risk gate and
-   `docs/05-legacy-competition.md` / `docs/05-hackathon-rules.md` when touching
-   competition-era guards.
+   `docs/05-legacy-competition.md` when touching competition-era guards.
 
 ## Trading and MCP
 
