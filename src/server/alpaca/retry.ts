@@ -67,6 +67,13 @@ export interface RetryOptions {
    * reads. Set `false` for a non-idempotent write — see `isRetryable`.
    */
   retryOnNoResponse?: boolean;
+  /**
+   * Wait before the next attempt, given the failure and the exponential
+   * backoff that would otherwise apply. Lets a caller honour a rate-limit
+   * window (a 429 is only worth retrying once the window has reset) without
+   * a second retry loop. Omit for plain exponential backoff.
+   */
+  delayMs?: (error: unknown, attempt: number, backoffMs: number) => number;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -83,6 +90,7 @@ export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions):
     baseDelayMs = RISK.retryBaseDelayMs,
     sleep = defaultSleep,
     retryOnNoResponse = true,
+    delayMs,
   } = options;
 
   let lastError: unknown;
@@ -96,7 +104,8 @@ export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions):
       if (!isRetryable(error, retryOnNoResponse) || attempt === attempts) {
         break;
       }
-      const delay = baseDelayMs * 2 ** (attempt - 1);
+      const backoff = baseDelayMs * 2 ** (attempt - 1);
+      const delay = delayMs ? Math.max(0, delayMs(error, attempt, backoff)) : backoff;
       console.warn(
         `[retry] ${operation} attempt ${attempt}/${attempts} failed (${statusOf(error) ?? "no response"}), retrying in ${delay}ms`,
       );

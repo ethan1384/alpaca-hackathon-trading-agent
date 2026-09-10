@@ -2,7 +2,8 @@ import type { Bar } from "@/domain/types";
 
 /**
  * Layer 1 of the triangle backtest: ascending-triangle breakouts, computed on
- * the underlying's daily bars and nothing else.
+ * the underlying's bars and nothing else — daily or 30-minute, the detector
+ * works in bar-index space and does not care which.
  *
  * Pure and options-free, like `orb.ts`. Whether a breakout carries on to its
  * measured-move target is a property of the tape; if it does not, no option
@@ -63,7 +64,8 @@ export interface TriangleSignalParams {
   minHeightPct: number;
   breakoutBufferPct: number;
   volumeMultiple: number;
-  volumeLookbackBars: number;
+  /** Prior bars of the same slot in the volume baseline — prior sessions on intraday bars. */
+  volumeLookbackSessions: number;
   cooldownBars: number;
 }
 
@@ -120,18 +122,46 @@ function regression(points: Pivot[]): { slope: number; intercept: number } {
   return { slope, intercept: meanY - slope * meanX };
 }
 
-/** Volume of bar `j` over the mean of the `lookback` bars before it. 0 when there is no baseline. */
-export function relativeVolume(bars: Bar[], j: number, lookback: number): number {
-  const from = Math.max(0, j - lookback);
-  if (from >= j) {
-    return 0;
+/**
+ * Each bar's volume over the mean of the `lookback` previous bars **of the same
+ * slot**. 0 when there is no baseline yet.
+ *
+ * `slots[i]` keys bar `i` — its ET minute on intraday bars, so the 15:30 bar is
+ * measured against prior 15:30 bars rather than against a midday bar that
+ * trades an eighth of it. Without `slots` every bar shares one slot and this is
+ * the plain trailing mean of the previous `lookback` bars (the daily case).
+ *
+ * One pass, a running sum per slot: O(n). Share volumes are integers, so the
+ * running sum is exact and matches a fresh sum over the window.
+ */
+export function relativeVolumes(
+  bars: Bar[],
+  lookback: number,
+  slots?: readonly number[],
+): number[] {
+  const history = new Map<number, { volumes: number[]; head: number; sum: number }>();
+  const ratios = new Array<number>(bars.length);
+
+  for (let j = 0; j < bars.length; j += 1) {
+    const key = slots?.[j] ?? 0;
+    let slot = history.get(key);
+    if (!slot) {
+      slot = { volumes: [], head: 0, sum: 0 };
+      history.set(key, slot);
+    }
+    const count = slot.volumes.length - slot.head;
+    const mean = count > 0 ? slot.sum / count : 0;
+    ratios[j] = mean > 0 ? bars[j].volume / mean : 0;
+
+    slot.volumes.push(bars[j].volume);
+    slot.sum += bars[j].volume;
+    if (slot.volumes.length - slot.head > lookback) {
+      slot.sum -= slot.volumes[slot.head];
+      slot.head += 1;
+    }
   }
-  let total = 0;
-  for (let i = from; i < j; i += 1) {
-    total += bars[i].volume;
-  }
-  const mean = total / (j - from);
-  return mean > 0 ? bars[j].volume / mean : 0;
+
+  return ratios;
 }
 
 /**
@@ -158,25 +188,24 @@ function swingLows(bars: Bar[], touches: Pivot[], j: number): Pivot[] {
 }
 
 /**
- * The triangle, if one is fully formed going into bar `j`. Built only from
- * swing highs confirmed by bar `j - 1` and from bars before `j`; bar `j` itself
- * is never looked at, so the breakout test stays the caller's.
+ * The triangle, if one is fully formed going into bar `j`, from `highs` — the
+ * swing highs already restricted to the window: inside `lookbackBars` of `j`
+ * and confirmed by bar `j - 1`. Bar `j` itself is never looked at, so the
+ * breakout test stays the caller's.
  */
-export function triangleBefore(
+function patternFromWindow(
   bars: Bar[],
-  swingHighs: Pivot[],
+  highs: Pivot[],
   j: number,
   p: TriangleSignalParams,
 ): TrianglePattern | null {
-  const confirmedBy = j - 1;
-  const windowStart = j - p.lookbackBars;
-  const highs = swingHighs.filter(
-    (pivot) => pivot.index >= windowStart && pivot.index + p.pivotStrength <= confirmedBy,
-  );
   if (highs.length < p.minTouches) {
     return null;
   }
-  const resistance = Math.max(...highs.map((h) => h.price));
+  let resistance = highs[0].price;
+  for (const h of highs) {
+    resistance = Math.max(resistance, h.price);
+  }
   const touches = highs.filter((h) => h.price >= resistance * (1 - p.touchTolerancePct));
   if (touches.length < p.minTouches) {
     return null;
@@ -238,20 +267,59 @@ export function triangleBefore(
 }
 
 /**
+ * The triangle, if one is fully formed going into bar `j`. Built only from
+ * swing highs confirmed by bar `j - 1` and from bars before `j`.
+ */
+export function triangleBefore(
+  bars: Bar[],
+  swingHighs: Pivot[],
+  j: number,
+  p: TriangleSignalParams,
+): TrianglePattern | null {
+  const windowStart = j - p.lookbackBars;
+  const highs = swingHighs.filter(
+    (pivot) => pivot.index >= windowStart && pivot.index + p.pivotStrength <= j - 1,
+  );
+  return patternFromWindow(bars, highs, j, p);
+}
+
+/**
  * Every ascending-triangle breakout in the series, in time order. Sequencing —
  * which ones are traded, and whether the book has room — is the engine's job.
+ *
+ * `slots` keys each bar's volume baseline (see `relativeVolumes`); pass the ET
+ * minute of each bar on intraday series, nothing on daily ones.
+ *
+ * The pivot window slides with two pointers: both of its bounds only move
+ * forward as `j` does, so a bar costs the pivots inside its window rather than
+ * every pivot of the series — the difference between seconds and minutes at
+ * ~20k thirty-minute bars per symbol.
  */
-export function detectTriangleBreakouts(bars: Bar[], p: TriangleSignalParams): TriangleDetection {
+export function detectTriangleBreakouts(
+  bars: Bar[],
+  p: TriangleSignalParams,
+  slots?: readonly number[],
+): TriangleDetection {
   const { highs } = findPivots(bars, p.pivotStrength);
+  const volumeRatios = relativeVolumes(bars, p.volumeLookbackSessions, slots);
   const breakouts: TriangleBreakout[] = [];
   const rejectedVolume: RejectedBreakout[] = [];
   let cooldownUntil = -1;
+  // `highs[lo..hi)`: inside the lookback and confirmed by `j - 1`.
+  let lo = 0;
+  let hi = 0;
 
   for (let j = 1; j < bars.length; j += 1) {
     if (j <= cooldownUntil) {
       continue;
     }
-    const pattern = triangleBefore(bars, highs, j, p);
+    while (hi < highs.length && highs[hi].index + p.pivotStrength <= j - 1) {
+      hi += 1;
+    }
+    while (lo < hi && highs[lo].index < j - p.lookbackBars) {
+      lo += 1;
+    }
+    const pattern = patternFromWindow(bars, highs.slice(lo, hi), j, p);
     if (!pattern) {
       continue;
     }
@@ -260,7 +328,7 @@ export function detectTriangleBreakouts(bars: Bar[], p: TriangleSignalParams): T
       continue;
     }
 
-    const volumeRatio = relativeVolume(bars, j, p.volumeLookbackBars);
+    const volumeRatio = volumeRatios[j];
     if (volumeRatio < p.volumeMultiple) {
       rejectedVolume.push({ index: j, timestamp: bar.timestamp, volumeRatio });
       continue;

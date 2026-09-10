@@ -39,10 +39,16 @@ export {
   detectTriangleBreakouts,
   findPivots,
   type Pivot,
+  relativeVolumes,
   supportAt,
   type TriangleBreakout,
   type TriangleDetection,
   type TrianglePattern,
   type TriangleSignalParams,
 } from "./triangle";
-export { runTriangleBacktest, summariseTriangle } from "./triangle-engine";
+export {
+  minutesToExpiry,
+  runTriangleBacktest,
+  summariseTriangle,
+  type TriangleBacktestDeps,
+} from "./triangle-engine";

@@ -32,7 +32,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    return NextResponse.json(await runTriangleBacktest(parsed.data));
+    // A client that gives up (timeout, closed tab) aborts the run's remaining
+    // data requests instead of leaving them to compete with the next run.
+    return NextResponse.json(await runTriangleBacktest(parsed.data, { signal: request.signal }));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Backtest failed";
     return NextResponse.json({ error: message }, { status: 500 });

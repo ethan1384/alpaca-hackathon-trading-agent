@@ -2,14 +2,15 @@ import { z } from "zod";
 import type { EquityPoint } from "./backtest";
 
 /**
- * Backtest contract for the ascending-triangle breakout → long call structure,
- * swing-traded on daily bars (`docs/09-strategie-triangle.md`).
+ * Backtest contract for the ascending-triangle breakout → long call structure
+ * (`docs/09-strategie-triangle.md`): triggers on 30-minute bars by default,
+ * held swing-style for days to weeks on a 30-45 DTE option.
  *
  * Same two-layer split as the ORB backtest (`backtest.ts`):
  *
  * 1. **Signal** — a flat resistance touched several times, a rising floor of
  *    higher lows, then the first close through the lid on above-average
- *    volume. Computed on the underlying's daily bars alone
+ *    volume. Computed on the underlying's bars alone
  *    (`src/server/backtest/triangle.ts`). Whether the breakout carries on to its
  *    measured-move target is the question that can invalidate the strategy.
  * 2. **Structure** — a bull call spread (or a naked long call) repriced with
@@ -17,8 +18,8 @@ import type { EquityPoint } from "./backtest";
  *    `ivMultiplier`, an assumption rather than something the bars can reveal.
  *
  * Unlike the two intraday engines, positions here live for days or weeks and
- * overlap across underlyings, so the engine simulates a portfolio day by day
- * and marks it to model every close.
+ * overlap across underlyings, so the engine simulates a portfolio session by
+ * session and marks it to model every close.
  */
 
 export const TRIANGLE_DEFAULT_UNIVERSE = [
@@ -34,6 +35,65 @@ export const TRIANGLE_DEFAULT_UNIVERSE = [
   "AMD",
 ] as const;
 
+/** Bars the pattern is detected and entered on. `1Day` is kept to compare with the first study. */
+export const TRIANGLE_TIMEFRAMES = ["30Min", "1Day"] as const;
+export type TriangleTimeframe = (typeof TRIANGLE_TIMEFRAMES)[number];
+
+/** The parameters whose sensible value depends on the bar size. */
+export interface TriangleScaledParams {
+  /** How far back a pattern may reach, in bars. */
+  lookbackBars: number;
+  /** Minimum bars from the first touch of the resistance to the breakout. */
+  minPatternBars: number;
+  /** Bars after a breakout during which the same underlying cannot fire again. */
+  cooldownBars: number;
+  /** A swing high within this fraction below the resistance counts as a touch. */
+  touchTolerancePct: number;
+  /** Resistance minus the lowest floor low, as a fraction of the resistance. */
+  minHeightPct: number;
+  /** Floor regression slope, as a fraction of price per bar. Keeps a flat range from passing as a triangle. */
+  minSlopePctPerBar: number;
+  /** The close must clear the resistance by this fraction. */
+  breakoutBufferPct: number;
+  /** How far under the stop reference (lid or floor) a close must land to stop out. */
+  stopBufferPct: number;
+}
+
+/**
+ * The single calibration source per timeframe. `1Day` holds the original
+ * daily study's values unchanged, so a `1Day` run reproduces it exactly.
+ *
+ * `30Min` is derived from it rather than tuned: a 130-bar window is 10
+ * sessions against 60, and on a random walk the natural size of a pattern
+ * scales with the square root of its duration — √(10/60) ≈ 0.41. Tolerance,
+ * minimum height, breakout buffer and stop buffer are the daily values × 0.41;
+ * the slope per bar is the scaled height spread over the longer bar count
+ * (0.0005 × 0.41 × 60/130 ≈ 0.0001). A pattern needs two sessions (26 bars) and
+ * the cooldown is one session (13 bars). See docs/09 §2.
+ */
+export const TRIANGLE_TIMEFRAME_DEFAULTS: Record<TriangleTimeframe, TriangleScaledParams> = {
+  "1Day": {
+    lookbackBars: 60,
+    minPatternBars: 15,
+    cooldownBars: 10,
+    touchTolerancePct: 0.01,
+    minHeightPct: 0.03,
+    minSlopePctPerBar: 0.0005,
+    breakoutBufferPct: 0.002,
+    stopBufferPct: 0.02,
+  },
+  "30Min": {
+    lookbackBars: 130,
+    minPatternBars: 26,
+    cooldownBars: 13,
+    touchTolerancePct: 0.004,
+    minHeightPct: 0.012,
+    minSlopePctPerBar: 0.0001,
+    breakoutBufferPct: 0.0008,
+    stopBufferPct: 0.008,
+  },
+};
+
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const ticker = z
   .string()
@@ -42,15 +102,20 @@ const ticker = z
 
 // --- Parameters ------------------------------------------------------------
 
-export const TriangleBacktestParamsSchema = z.object({
+const TriangleBacktestParamsObject = z.object({
   underlyings: z
     .array(ticker)
     .min(1)
     .max(40)
     .default([...TRIANGLE_DEFAULT_UNIVERSE]),
-  /** Inclusive session range, `YYYY-MM-DD`. Daily history before `start` is fetched to seed patterns and vol. */
+  /** Inclusive session range, `YYYY-MM-DD`. History before `start` is fetched to seed patterns and vol. */
   start: isoDate,
   end: isoDate,
+  /**
+   * Bars the pattern is detected, entered and exited on. `30Min` keeps only
+   * the regular session (09:30–16:00 ET); holding stays swing either way.
+   */
+  timeframe: z.enum(TRIANGLE_TIMEFRAMES).default("30Min"),
   /** See `BacktestParamsSchema.feed` — the volume filter wants the consolidated tape. */
   feed: z.enum(["iex", "sip"]).default("sip"),
   /** Buy-and-hold comparison drawn under the equity curve. */
@@ -65,31 +130,33 @@ export const TriangleBacktestParamsSchema = z.object({
   // --- Signal (layer 1) ---
   /** Bars each side a swing high/low must dominate. Also the confirmation delay: a pivot is known `pivotStrength` bars late. */
   pivotStrength: z.number().int().min(1).max(10).default(3),
-  /** How far back a pattern may reach, in bars. */
-  lookbackBars: z.number().int().min(15).max(250).default(60),
-  /** Minimum bars from the first touch of the resistance to the breakout. */
-  minPatternBars: z.number().int().min(5).max(200).default(15),
   /** Swing highs that must sit on the resistance. Three is the textbook "triple top" lid. */
   minTouches: z.number().int().min(2).max(6).default(3),
-  /** A swing high within this fraction below the resistance counts as a touch. */
-  touchTolerancePct: z.number().min(0).max(0.05).default(0.01),
   /**
    * Swing lows the rising floor needs: the lowest bar between each pair of
    * consecutive touches, plus the final squeeze before the breakout — each
    * strictly higher than the one before.
    */
   minLowPivots: z.number().int().min(2).max(6).default(2),
-  /** Floor regression slope, as a fraction of price per bar. Keeps a flat range from passing as a triangle. */
-  minSlopePctPerBar: z.number().min(0).max(0.01).default(0.0005),
-  /** Resistance minus the lowest floor low, as a fraction of the resistance. */
-  minHeightPct: z.number().min(0).max(0.5).default(0.03),
-  /** The close must clear the resistance by this fraction. */
-  breakoutBufferPct: z.number().min(0).max(0.05).default(0.002),
-  /** Breakout-day volume must exceed this multiple of the prior `volumeLookbackBars` mean. */
+  /** Breakout-bar volume must exceed this multiple of its baseline (`volumeLookbackSessions`). */
   volumeMultiple: z.number().min(0).default(1.2),
-  volumeLookbackBars: z.number().int().min(5).max(60).default(20),
-  /** Bars after a breakout during which the same underlying cannot fire again. */
-  cooldownBars: z.number().int().min(0).max(60).default(10),
+  /**
+   * Sessions in the volume baseline. The breakout bar is compared with the
+   * same ET time slot over this many prior sessions — the 15:30 bar trades
+   * several times the midday one on an ordinary day. On `1Day` that is simply
+   * the prior N days.
+   */
+  volumeLookbackSessions: z.number().int().min(5).max(60).default(20),
+
+  // Scaled by timeframe — omit to take `TRIANGLE_TIMEFRAME_DEFAULTS[timeframe]`.
+  // An explicit value always wins.
+  lookbackBars: z.number().int().min(15).max(1000).optional(),
+  minPatternBars: z.number().int().min(5).max(1000).optional(),
+  cooldownBars: z.number().int().min(0).max(500).optional(),
+  touchTolerancePct: z.number().min(0).max(0.05).optional(),
+  minHeightPct: z.number().min(0).max(0.5).optional(),
+  minSlopePctPerBar: z.number().min(0).max(0.01).optional(),
+  breakoutBufferPct: z.number().min(0).max(0.05).optional(),
 
   // --- Structure (layer 2) ---
   structure: z.enum(["bull_call_spread", "long_call"]).default("bull_call_spread"),
@@ -111,7 +178,7 @@ export const TriangleBacktestParamsSchema = z.object({
   strikeStep: z.number().positive().optional(),
 
   // --- Volatility model ---
-  /** Sessions of realised vol used to seed IV. Strictly prior closes only. */
+  /** Sessions of realised vol used to seed IV. Strictly prior session closes only. */
   hvLookbackDays: z.number().int().min(5).max(120).default(20),
   /** IV as a multiple of realised vol. An assumption — see docs/09 §5. */
   ivMultiplier: z.number().gt(0).default(1.1),
@@ -127,14 +194,22 @@ export const TriangleBacktestParamsSchema = z.object({
   /** Floor on the per-leg friction, in dollars — a one-cent tick is never free. */
   minFrictionPerLeg: z.number().min(0).default(0.01),
 
-  // --- Exits (all keyed off the underlying, checked at the daily close) ---
+  // --- Exits (all keyed off the underlying) ---
   /**
    * `resistance`: the breakout failed once price closes back under the old lid
    * by `stopBufferPct`. `support`: only a close under the rising floor, extended
    * forward, by `stopBufferPct`. The first is tighter.
    */
   stopMode: z.enum(["resistance", "support"]).default("resistance"),
-  stopBufferPct: z.number().min(0).max(0.2).default(0.02),
+  /** Scaled by timeframe, like the signal fields above. */
+  stopBufferPct: z.number().min(0).max(0.2).optional(),
+  /**
+   * Which close the stop is tested on. `session_close`: the last bar of each
+   * session only — a swing position is not shaken out by one intraday bar.
+   * `bar_close`: every bar. Identical on `1Day`. The target is always tested
+   * on every bar's high.
+   */
+  stopCheck: z.enum(["session_close", "bar_close"]).default("session_close"),
   /** Spread only: take profit once its value reaches this share of the maximum profit. 1 disables it. */
   takeProfitPctOfMax: z.number().gt(0).max(1).default(0.8),
   /** Sessions held before the time stop, counting the entry session. */
@@ -143,7 +218,28 @@ export const TriangleBacktestParamsSchema = z.object({
   exitDteFloor: z.number().int().min(0).max(30).default(7),
 });
 
-export type TriangleBacktestParams = z.infer<typeof TriangleBacktestParamsSchema>;
+/** Fill every scaled field left out with its timeframe default. */
+function resolveScaled<T extends z.output<typeof TriangleBacktestParamsObject>>(
+  params: T,
+): Omit<T, keyof TriangleScaledParams> & TriangleScaledParams {
+  const defaults = TRIANGLE_TIMEFRAME_DEFAULTS[params.timeframe];
+  return {
+    ...params,
+    lookbackBars: params.lookbackBars ?? defaults.lookbackBars,
+    minPatternBars: params.minPatternBars ?? defaults.minPatternBars,
+    cooldownBars: params.cooldownBars ?? defaults.cooldownBars,
+    touchTolerancePct: params.touchTolerancePct ?? defaults.touchTolerancePct,
+    minHeightPct: params.minHeightPct ?? defaults.minHeightPct,
+    minSlopePctPerBar: params.minSlopePctPerBar ?? defaults.minSlopePctPerBar,
+    breakoutBufferPct: params.breakoutBufferPct ?? defaults.breakoutBufferPct,
+    stopBufferPct: params.stopBufferPct ?? defaults.stopBufferPct,
+  };
+}
+
+export const TriangleBacktestParamsSchema = TriangleBacktestParamsObject.transform(resolveScaled);
+
+/** Parsed parameters, every timeframe-scaled field resolved to a number. */
+export type TriangleBacktestParams = z.output<typeof TriangleBacktestParamsSchema>;
 /** Shape accepted on the wire, before defaults are applied. */
 export type TriangleBacktestParamsInput = z.input<typeof TriangleBacktestParamsSchema>;
 
@@ -180,7 +276,7 @@ export interface TriangleGeometry {
   target: number;
   breakoutTimestamp: string;
   breakoutClose: number;
-  /** Breakout-day volume over the trailing mean. */
+  /** Breakout-bar volume over its baseline (same time slot on intraday bars). */
   volumeRatio: number;
 }
 
@@ -227,7 +323,7 @@ export interface TriangleTrade {
   /** P&L over `riskAmount`. */
   rMultiple: number;
   equityAfter: number;
-  /** Best and worst model value of the structure at a close while open. */
+  /** Best and worst model value of the structure at a bar close while open. */
   maxFavorable: number;
   maxAdverse: number;
 }
@@ -292,8 +388,13 @@ export interface TriangleBacktestResult {
   benchmarkCurve: EquityPoint[];
   stats: TriangleStats;
   funnel: TriangleFunnel;
-  /** Daily bars of every underlying that traded, for the pattern charts. */
-  barsByUnderlying: Record<string, CompactBar[]>;
+  /**
+   * Per trade id, the underlying's bars (regular session only on `30Min`) from
+   * a little before the pattern's first touch to a little after the exit — the
+   * window its chart draws. Per trade rather than per underlying: six years of
+   * 30-minute bars for every traded symbol would not be a reasonable payload.
+   */
+  barsByTrade: Record<string, CompactBar[]>;
   sessionsScanned: number;
   warnings: string[];
 }

@@ -75,6 +75,34 @@ describe("withRetry [O4]", () => {
     expect(delays).toEqual([100, 200]);
   });
 
+  it("lets the caller replace the backoff per failure — e.g. wait out a rate-limit window", async () => {
+    const delays: number[] = [];
+    const seen: [number, number][] = [];
+    const fn = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(httpError(429))
+      .mockRejectedValueOnce(httpError(503))
+      .mockResolvedValue("ok");
+    await expect(
+      withRetry(fn, {
+        operation: "t",
+        baseDelayMs: 100,
+        sleep: async (ms) => {
+          delays.push(ms);
+        },
+        delayMs: (error, attempt, backoff) => {
+          seen.push([attempt, backoff]);
+          return (error as { status: number }).status === 429 ? 61_000 : backoff;
+        },
+      }),
+    ).resolves.toBe("ok");
+    expect(seen).toEqual([
+      [1, 100],
+      [2, 200],
+    ]);
+    expect(delays).toEqual([61_000, 200]);
+  });
+
   it("counts outright failures and alerts past the threshold", async () => {
     const fail = () =>
       withRetry(

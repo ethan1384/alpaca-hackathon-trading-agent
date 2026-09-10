@@ -20,26 +20,36 @@ import {
 } from "@/components/ui/table";
 import {
   TRIANGLE_DEFAULT_UNIVERSE,
+  TRIANGLE_TIMEFRAME_DEFAULTS,
   type TriangleBacktestParamsInput,
   type TriangleBacktestResult,
+  type TriangleTimeframe,
   type TriangleTrade,
 } from "@/domain/backtest-triangle";
 import { useTriangleBacktest } from "@/lib/hooks/use-triangle-backtest";
 import { cn } from "@/lib/utils";
 
-/** Defaults mirror `TriangleBacktestParamsSchema`; percentages are entered as percent. */
+/**
+ * Defaults mirror `TriangleBacktestParamsSchema`; percentages are entered as
+ * percent. An empty field is "auto": the schema fills it from
+ * `TRIANGLE_TIMEFRAME_DEFAULTS` for the chosen timeframe, and its placeholder
+ * shows that value.
+ */
 const INITIAL_FORM = {
   underlyings: TRIANGLE_DEFAULT_UNIVERSE.join(","),
   feed: "sip" as "iex" | "sip",
   start: "2023-09-01",
   end: "2026-09-04",
+  timeframe: "30Min" as TriangleTimeframe,
   structure: "bull_call_spread" as "bull_call_spread" | "long_call",
   stopMode: "resistance" as "resistance" | "support",
+  stopCheck: "session_close" as "session_close" | "bar_close",
   minTouches: "3",
-  touchTolerancePct: "1",
+  lookbackBars: "",
+  touchTolerancePct: "",
   volumeMultiple: "1.2",
-  minHeightPct: "3",
-  stopBufferPct: "2",
+  minHeightPct: "",
+  stopBufferPct: "",
   targetDelta: "0.45",
   dteDays: "35",
   maxHoldDays: "15",
@@ -51,6 +61,12 @@ const INITIAL_FORM = {
 
 type FormState = typeof INITIAL_FORM;
 
+/** Blank → undefined (the timeframe default); otherwise the number over `scale` (100 for a percent). */
+function optionalNumber(value: string, scale = 1): number | undefined {
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : Number(trimmed) / scale;
+}
+
 function toParams(form: FormState): TriangleBacktestParamsInput {
   return {
     underlyings: form.underlyings
@@ -60,13 +76,16 @@ function toParams(form: FormState): TriangleBacktestParamsInput {
     feed: form.feed,
     start: form.start,
     end: form.end,
+    timeframe: form.timeframe,
     structure: form.structure,
     stopMode: form.stopMode,
+    stopCheck: form.stopCheck,
     minTouches: Number(form.minTouches),
-    touchTolerancePct: Number(form.touchTolerancePct) / 100,
+    lookbackBars: optionalNumber(form.lookbackBars),
+    touchTolerancePct: optionalNumber(form.touchTolerancePct, 100),
     volumeMultiple: Number(form.volumeMultiple),
-    minHeightPct: Number(form.minHeightPct) / 100,
-    stopBufferPct: Number(form.stopBufferPct) / 100,
+    minHeightPct: optionalNumber(form.minHeightPct, 100),
+    stopBufferPct: optionalNumber(form.stopBufferPct, 100),
     targetDelta: Number(form.targetDelta),
     dteDays: Number(form.dteDays),
     maxHoldDays: Number(form.maxHoldDays),
@@ -76,6 +95,20 @@ function toParams(form: FormState): TriangleBacktestParamsInput {
     ivMultiplier: Number(form.ivMultiplier),
   };
 }
+
+/** Placeholder of an "auto" field: the value the timeframe resolves it to. */
+function auto(value: number, percent = false): string {
+  return `auto · ${percent ? Number((value * 100).toPrecision(3)) : value}`;
+}
+
+const ET_TIME = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+/** `HH:MM` in New York time. */
+const etTime = (timestamp: string) => ET_TIME.format(new Date(timestamp));
 
 function Segmented<T extends string>({
   label,
@@ -266,9 +299,14 @@ export function TrianglePanel() {
   const { mutate, data: result, error, isPending } = useTriangleBacktest();
   const set = (key: keyof FormState) => (value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+  const scaled = TRIANGLE_TIMEFRAME_DEFAULTS[form.timeframe];
+  const intraday = result != null && result.params.timeframe !== "1Day";
+  /** Entry/exit date, with the New York bar time on intraday runs. */
+  const when = (date: string, timestamp: string) =>
+    intraday ? `${date} ${etTime(timestamp)}` : date;
 
   const trades = result
-    ? [...result.trades].sort((a, b) => a.entryDate.localeCompare(b.entryDate))
+    ? [...result.trades].sort((a, b) => a.entryTimestamp.localeCompare(b.entryTimestamp))
     : [];
   const selected = trades.find((t) => t.id === selectedId) ?? trades[0];
 
@@ -281,7 +319,7 @@ export function TrianglePanel() {
         <CardContent className="flex flex-col gap-3">
           <Field
             label="Underlyings"
-            hint="Daily bars; one position per underlying at a time"
+            hint="One position per underlying at a time"
             value={form.underlyings}
             onChange={set("underlyings")}
           />
@@ -299,29 +337,52 @@ export function TrianglePanel() {
             <Field label="Start" type="date" value={form.start} onChange={set("start")} />
             <Field label="End" type="date" value={form.end} onChange={set("end")} />
           </div>
+          <Segmented
+            label="Trigger bars"
+            options={[
+              { value: "30Min", label: "30 min" },
+              { value: "1Day", label: "Daily" },
+            ]}
+            value={form.timeframe}
+            onChange={(timeframe) => setForm((prev) => ({ ...prev, timeframe }))}
+            hint={
+              form.timeframe === "30Min"
+                ? "Pattern and entry on 30-min bars, regular session only. Held swing: days to weeks, 30-45 DTE."
+                : "The first study's daily bars, kept for comparison."
+            }
+          />
 
           <Separator />
           <p className="text-[11px] text-muted-foreground">
             Pattern: a flat lid touched by ≥ N swing highs, a rising floor of higher lows, then the
-            first close through the lid on above-average volume.
+            first close through the lid on above-average volume. Empty fields are auto — scaled to
+            the bar size.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Min touches" value={form.minTouches} onChange={set("minTouches")} />
             <Field
-              label="Touch tol. (%)"
-              value={form.touchTolerancePct}
-              onChange={set("touchTolerancePct")}
+              label="Window (bars)"
+              value={form.lookbackBars}
+              placeholder={auto(scaled.lookbackBars)}
+              onChange={set("lookbackBars")}
             />
             <Field
-              label="Volume ×"
-              hint="vs 20-day mean"
-              value={form.volumeMultiple}
-              onChange={set("volumeMultiple")}
+              label="Touch tol. (%)"
+              value={form.touchTolerancePct}
+              placeholder={auto(scaled.touchTolerancePct, true)}
+              onChange={set("touchTolerancePct")}
             />
             <Field
               label="Min height (%)"
               value={form.minHeightPct}
+              placeholder={auto(scaled.minHeightPct, true)}
               onChange={set("minHeightPct")}
+            />
+            <Field
+              label="Volume ×"
+              hint={form.timeframe === "30Min" ? "vs the same slot, 20 sessions" : "vs 20-day mean"}
+              value={form.volumeMultiple}
+              onChange={set("volumeMultiple")}
             />
           </div>
 
@@ -355,13 +416,28 @@ export function TrianglePanel() {
             value={form.stopMode}
             onChange={(stopMode) => setForm((prev) => ({ ...prev, stopMode }))}
           />
+          <Segmented
+            label="Stop tested on"
+            options={[
+              { value: "session_close", label: "Session close" },
+              { value: "bar_close", label: "Every bar" },
+            ]}
+            value={form.stopCheck}
+            onChange={(stopCheck) => setForm((prev) => ({ ...prev, stopCheck }))}
+            hint="The target is tested on every bar's high either way. Same thing on daily bars."
+          />
           <div className="grid grid-cols-2 gap-3">
             <Field
               label="Stop buffer (%)"
               value={form.stopBufferPct}
+              placeholder={auto(scaled.stopBufferPct, true)}
               onChange={set("stopBufferPct")}
             />
-            <Field label="Max hold (d)" value={form.maxHoldDays} onChange={set("maxHoldDays")} />
+            <Field
+              label="Max hold (sessions)"
+              value={form.maxHoldDays}
+              onChange={set("maxHoldDays")}
+            />
           </div>
 
           <Separator />
@@ -446,7 +522,7 @@ export function TrianglePanel() {
                   <Stat
                     label="Trades"
                     value={String(result.stats.trades)}
-                    hint={`${result.sessionsScanned} sessions · ${result.params.underlyings.length} symbols`}
+                    hint={`${result.sessionsScanned} sessions · ${result.params.underlyings.length} symbols · ${intraday ? "30-min" : "daily"} triggers`}
                   />
                   <Stat
                     label="Payoff ratio"
@@ -465,7 +541,7 @@ export function TrianglePanel() {
                   />
                   <Stat
                     label="Avg hold"
-                    value={`${fmtNum(result.stats.avgHoldingDays, 1)} d`}
+                    value={`${fmtNum(result.stats.avgHoldingDays, 1)} sessions`}
                     hint={
                       Object.entries(result.stats.byExitReason)
                         .map(([k, v]) => `${k}:${v}`)
@@ -489,7 +565,7 @@ export function TrianglePanel() {
                   baseline={result.params.initialEquity}
                 />
                 <div className="flex gap-4 text-[11px] text-muted-foreground">
-                  <span>━ strategy (marked to model at each close)</span>
+                  <span>━ strategy (marked to model at each session close)</span>
                   <span>┅ {result.params.benchmark} scaled to the same start</span>
                 </div>
                 <div>
@@ -504,12 +580,14 @@ export function TrianglePanel() {
                 <CardHeader>
                   <CardTitle className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                     <span>
-                      {selected.underlying} · {selected.entryDate}
+                      {selected.underlying} · {when(selected.entryDate, selected.entryTimestamp)}
+                      {intraday ? " ET" : ""}
                     </span>
                     <span className="text-xs font-normal text-muted-foreground">
                       lid {fmtNum(selected.triangle.resistance)} · height{" "}
                       {fmtNum(selected.triangle.height)} · target {fmtNum(selected.triangle.target)}{" "}
-                      · {selected.exitReason} after {selected.holdingDays} d ·{" "}
+                      · {selected.exitReason} after {selected.holdingDays} session
+                      {selected.holdingDays === 1 ? "" : "s"} ·{" "}
                       <span className={selected.pnl >= 0 ? "text-emerald-500" : "text-red-500"}>
                         {fmtUsd(selected.pnl)} ({fmtNum(selected.rMultiple)} R)
                       </span>
@@ -519,11 +597,14 @@ export function TrianglePanel() {
                 <CardContent className="flex flex-col gap-2">
                   <TriangleTradeChart
                     trade={selected}
-                    bars={result.barsByUnderlying[selected.underlying] ?? []}
+                    bars={result.barsByTrade[selected.id] ?? []}
+                    intraday={intraday}
                   />
                   <p className="text-[11px] text-muted-foreground">
                     ● amber: touches of the lid · ● blue: floor lows · lines: lid and floor
-                    regression · dashed: target and stop. Click a trade below to redraw.
+                    regression · dashed: target and stop.{" "}
+                    {intraday ? "30-min candles, regular session only. " : ""}Click a trade below to
+                    redraw.
                   </p>
                 </CardContent>
               </Card>
@@ -578,7 +659,7 @@ export function TrianglePanel() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Entry</TableHead>
+                      <TableHead>Entry{intraday ? " (ET)" : ""}</TableHead>
                       <TableHead>Sym</TableHead>
                       <TableHead className="text-right">Strikes</TableHead>
                       <TableHead>Expiry</TableHead>
@@ -600,7 +681,9 @@ export function TrianglePanel() {
                           selected?.id === trade.id && "bg-primary/10",
                         )}
                       >
-                        <TableCell className="font-mono text-xs">{trade.entryDate}</TableCell>
+                        <TableCell className="whitespace-nowrap font-mono text-xs">
+                          {when(trade.entryDate, trade.entryTimestamp)}
+                        </TableCell>
                         <TableCell className="font-mono text-xs">{trade.underlying}</TableCell>
                         <TableCell className="text-right font-mono text-xs tabular-nums">
                           {fmtNum(trade.longStrike)}
@@ -614,9 +697,9 @@ export function TrianglePanel() {
                           {trade.contracts}
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs tabular-nums">
-                          {trade.holdingDays}d
+                          {trade.holdingDays}s
                         </TableCell>
-                        <TableCell className="text-xs">
+                        <TableCell className="whitespace-nowrap text-xs">
                           <span
                             className="mr-1.5 inline-block size-2 rounded-full"
                             style={{ backgroundColor: EXIT_COLORS[trade.exitReason] }}

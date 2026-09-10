@@ -135,6 +135,11 @@ export async function getBarsRange(
     timeframe: toSdkTimeframe(timeframe) as never,
     start: toRangeBound(start, "start"),
     end: toRangeBound(end, "end"),
+    // Page size, not a total: the SDK keeps following `next_page_token`. Unset,
+    // Alpaca pages 1,000 bars at a time — ~55 requests per symbol for six years
+    // of 30-minute bars, enough to trip the data rate limit on a 40-symbol
+    // backtest. 10,000 is the API maximum.
+    limit: Math.min(10_000, maxPerSymbol),
   };
   const opts = { maxPerSymbol };
 

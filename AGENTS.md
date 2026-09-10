@@ -166,7 +166,7 @@ Three independent engines live under `src/server/backtest/` and share the pure
 
 | Engine | Strategy | Domain | Route |
 | --- | --- | --- | --- |
-| `triangle-engine.ts` | Ascending-triangle breakout to call spread or long call | `src/domain/backtest-triangle.ts` | `/api/backtest/triangle` |
+| `triangle-engine.ts` | Ascending-triangle breakout on 30-min triggers (daily kept) → call spread / long call, swing hold | `src/domain/backtest-triangle.ts` | `/api/backtest/triangle` |
 | `engine.ts` | ORB to 0DTE debit vertical | `src/domain/backtest.ts` | `/api/backtest` |
 | `credit-spread.ts` | 1–2 DTE short credit spreads, archived strategy | `src/domain/backtest-credit.ts` | `/api/backtest/credit` |
 
@@ -175,10 +175,29 @@ wired but cannot open beyond its historical window. The active research track is
 ascending-triangle backtest in `docs/09-strategie-triangle.md`. It is backtest-only and no
 tested variant currently demonstrates an edge, so do not wire it live without new evidence.
 
+The triangle detector is pure and lookahead-free; its tests verify the same breakout on a
+series truncated at the detection bar. The triangle backtest runs on `timeframe` `30Min`
+(default) or `1Day`:
+
+- **One calibration source.** Bar-size-dependent parameters (window, pattern
+  length, cooldown, tolerance, height, slope, buffers) are resolved from
+  `TRIANGLE_TIMEFRAME_DEFAULTS` in the schema's `transform`; an explicit value
+  always wins. `1Day` with its defaults reproduces the first daily study to the
+  trade — keep it that way.
+- **Regular session only.** Alpaca's 30Min feed also returns pre-market and
+  after-hours bars; the engine drops everything outside 09:30–16:00 ET before
+  detection, entry, exit and session closes (IV, benchmark, equity marks).
+- **Volume per time slot.** The breakout bar is compared with the same ET slot
+  over `volumeLookbackSessions` prior sessions — the 15:30 bar trades ~8× the
+  midday one. A plain trailing mean would confirm every closing bar.
+- **Fetching.** Four symbols at a time, each through `withRetry` with a
+  multi-second backoff: 40 unbounded 30-minute fetches trip the data rate limit,
+  and the SDK then fails with no HTTP status. Space 40-symbol runs ≥ 60 s apart.
+
 Read `docs/07-strategie-credit-spreads.md` before changing the credit engine. Its result is
 highly sensitive to `ivMultiplier`, an assumption that cannot be recovered from underlying
-bars. The triangle detector is pure and lookahead-free; its tests verify the same breakout
-on a series truncated at the detection bar.
+bars. `black-scholes.ts` is pure and shared — no `server-only`, so it stays testable
+and reusable.
 
 All three engines measure time to expiry in trading minutes (`tradingYears`) on the same
 252-session calendar used to annualise realised volatility. Do not replace it with calendar

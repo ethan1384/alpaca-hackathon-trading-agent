@@ -45,12 +45,15 @@ export function Field({
   value,
   onChange,
   type = "text",
+  placeholder,
 }: {
   label: string;
   hint?: string;
   value: string;
   onChange: (value: string) => void;
   type?: string;
+  /** Shown while the field is empty — e.g. the value an "auto" field resolves to. */
+  placeholder?: string;
 }) {
   const id = useId();
   return (
@@ -58,7 +61,13 @@ export function Field({
       <label className="text-xs font-medium" htmlFor={id}>
         {label}
       </label>
-      <Input id={id} type={type} value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input
+        id={id}
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
       {hint ? <span className="text-[11px] text-muted-foreground">{hint}</span> : null}
     </div>
   );

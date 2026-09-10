@@ -21,11 +21,6 @@ export const EXIT_COLORS: Record<TriangleExitReason, string> = {
 
 const RESISTANCE = "#f59e0b";
 const SUPPORT = "#3b82f6";
-/** Context drawn around the pattern, in bars. */
-const BARS_BEFORE = 25;
-const BARS_AFTER = 15;
-
-const toSeconds = (timestamp: string) => Math.floor(Date.parse(timestamp) / 1000);
 
 function fromCompact(underlying: string, [time, open, high, low, close, volume]: CompactBar): Bar {
   return {
@@ -44,19 +39,22 @@ function fromCompact(underlying: string, [time, open, high, low, close, volume]:
  * One trade, drawn the way the detector saw it: the lid and its touches, the
  * rising floor through its swing lows, the breakout, then entry and exit with
  * the target, stop and strikes as levels.
+ *
+ * `bars` is the trade's own window (`barsByTrade[trade.id]`), already cut by
+ * the engine around the pattern and the exit — daily or 30-minute candles,
+ * regular session only. `intraday` puts clock time on the axis.
  */
-export function TriangleTradeChart({ trade, bars }: { trade: TriangleTrade; bars: CompactBar[] }) {
+export function TriangleTradeChart({
+  trade,
+  bars,
+  intraday = false,
+}: {
+  trade: TriangleTrade;
+  bars: CompactBar[];
+  intraday?: boolean;
+}) {
   const { window, markers, lines, priceLines } = useMemo(() => {
     const { triangle } = trade;
-    const start = toSeconds(triangle.startTimestamp);
-    const exit = toSeconds(trade.exitTimestamp);
-    const startIndex = Math.max(
-      0,
-      bars.findIndex((b) => b[0] >= start),
-    );
-    const exitIndex = bars.findIndex((b) => b[0] >= exit);
-    const from = Math.max(0, startIndex - BARS_BEFORE);
-    const to = exitIndex === -1 ? bars.length : Math.min(bars.length, exitIndex + BARS_AFTER + 1);
 
     const markers: ChartMarker[] = [
       ...triangle.touches.map(
@@ -127,7 +125,7 @@ export function TriangleTradeChart({ trade, bars }: { trade: TriangleTrade; bars
     ];
 
     return {
-      window: bars.slice(from, to).map((b) => fromCompact(trade.underlying, b)),
+      window: bars.map((b) => fromCompact(trade.underlying, b)),
       markers,
       lines,
       priceLines,
@@ -140,6 +138,7 @@ export function TriangleTradeChart({ trade, bars }: { trade: TriangleTrade; bars
       height={380}
       showVolume
       showLegend
+      intraday={intraday}
       markers={markers}
       lines={lines}
       priceLines={priceLines}
