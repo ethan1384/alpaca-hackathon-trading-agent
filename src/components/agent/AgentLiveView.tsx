@@ -17,8 +17,8 @@ import { postSubscription } from "@/lib/api/subscriptions";
 import { mergeTrailingBars } from "@/lib/bars-merge";
 import { classifyDecision, DECISION_MARKER_STYLES, decisionMarkers } from "@/lib/decision-markers";
 import { useAgentDecisions } from "@/lib/hooks/use-agent";
-import { useMarketStore } from "@/lib/stores/market-store";
 import { useConfigStore } from "@/lib/stores/config-store";
+import { useMarketStore } from "@/lib/stores/market-store";
 import { cn } from "@/lib/utils";
 import { AgentPipeline, TONE_CLASSES } from "./AgentPipeline";
 
@@ -287,7 +287,9 @@ export function AgentLiveView({
                     ? `live 1-min tape · ${sessionDate} ET`
                     : `last session · ${sessionDate} ET`}{" "}
                 · {sessionBars.length} bars · {markers.length} agent marks
-                {testFeed ? " · feed test (REST IEX only — set ALPACA_DATA_FEED=iex for live SPY)" : ""}
+                {testFeed
+                  ? " · feed test (REST IEX only — set ALPACA_DATA_FEED=iex for live SPY)"
+                  : ""}
               </span>
             </div>
 
@@ -375,7 +377,8 @@ export function AgentLiveView({
                   <dt className="text-muted-foreground">entry credit</dt>
                   <dd className="text-right tabular-nums">
                     {money(spreadEntryCredit(openSpread))}
-                    {openSpread.filledCredit != null && openSpread.filledCredit !== openSpread.credit
+                    {openSpread.filledCredit != null &&
+                    openSpread.filledCredit !== openSpread.credit
                       ? ` (limit ${openSpread.credit.toFixed(2)})`
                       : ""}
                   </dd>

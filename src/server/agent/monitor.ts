@@ -3,7 +3,7 @@ import "server-only";
 import { AGENT, etMinutes, etMinutesOf } from "@/config/agent";
 import { easternDate, msUntilSnapshot } from "@/config/competition";
 import { quoteAnomalies } from "@/config/risk";
-import { type ManagedSpread, spreadEntryCredit, type SpreadZone } from "@/domain/agent";
+import { type ManagedSpread, type SpreadZone, spreadEntryCredit } from "@/domain/agent";
 import type { DecisionRecord } from "@/domain/decision";
 import type { StrategySignal } from "@/domain/strategy";
 import { StrategySignalSchema } from "@/domain/strategy";

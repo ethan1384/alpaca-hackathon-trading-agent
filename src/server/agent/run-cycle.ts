@@ -14,7 +14,6 @@ import type {
   ManagedReport,
   ManagedSpread,
 } from "@/domain/agent";
-import { spreadEntryCredit } from "@/domain/agent";
 import type { DecisionDraft, DecisionRecord } from "@/domain/decision";
 import type { StrategySignal } from "@/domain/strategy";
 import type { TradingAccount, TradingOrder, TradingPosition } from "@/domain/trading";
@@ -52,8 +51,8 @@ import {
   type CreditSpreadDeps,
 } from "@/server/strategies/credit-spread-strategy";
 import { executeSignal as defaultExecuteSignal } from "@/server/strategies/execute";
-import { buildCloseSignal, decideManage, markSpread } from "./monitor";
 import { hydrateAgentStateFromAlpaca } from "./hydrate";
+import { buildCloseSignal, decideManage, markSpread } from "./monitor";
 import { loadAgentState, mutateAgentState } from "./positions-store";
 
 /**
