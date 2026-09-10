@@ -11,7 +11,6 @@ import { optionPrice, tradingYears } from "./black-scholes";
 import { toEastern } from "./orb";
 import {
   autoStrikeStep,
-  createPacer,
   dateChunks,
   expirationFor,
   fetchRetryDelay,
@@ -412,21 +411,6 @@ describe("bar fetching under the data rate limit", () => {
   const params = parse(bars, {});
   /** Waits longer than the pacer ever imposes: the retry waits. */
   const retryWaits = (delays: number[]) => delays.filter((ms) => ms >= 1_000);
-
-  it("spaces request starts, first one immediately", async () => {
-    const slept: number[] = [];
-    const pace = createPacer(
-      334,
-      () => 0,
-      async (ms) => {
-        slept.push(ms);
-      },
-    );
-    expect(await pace()).toBe(0);
-    expect(await pace()).toBe(334);
-    expect(await pace()).toBe(668);
-    expect(slept).toEqual([334, 668]);
-  });
 
   it("requests 30-minute history a year at a time and daily history in one call", async () => {
     const calls: { timeframe: string; from: string; to: string }[] = [];

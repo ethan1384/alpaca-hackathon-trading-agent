@@ -3,7 +3,7 @@ import "server-only";
 import { getEnv } from "@/config/env";
 import type { Bar, DataFeed, MarketClock, Timeframe } from "@/domain/types";
 import { detectAssetClass, normalizeSymbol } from "@/domain/types";
-import { getAlpacaRestClient } from "./client";
+import { getAlpacaRestClient, getBacktestDataClient } from "./client";
 import { normalizeSdkBar } from "./normalize";
 
 function toSdkTimeframe(timeframe: Timeframe): string {
@@ -129,16 +129,17 @@ export async function getBarsRange(
 ): Promise<Bar[]> {
   const normalized = normalizeSymbol(symbol);
   const assetClass = detectAssetClass(normalized);
-  const client = getAlpacaRestClient();
+  // Backtest history only: a client whose limiter paces every page (see client.ts).
+  const client = getBacktestDataClient();
   const req = {
     symbols: [normalized],
     timeframe: toSdkTimeframe(timeframe) as never,
     start: toRangeBound(start, "start"),
     end: toRangeBound(end, "end"),
-    // Page size, not a total: the SDK keeps following `next_page_token`. Unset,
-    // Alpaca pages 1,000 bars at a time — ~55 requests per symbol for six years
-    // of 30-minute bars, enough to trip the data rate limit on a 40-symbol
-    // backtest. 10,000 is the API maximum.
+    // Page size, not a total: the SDK keeps following `next_page_token`.
+    // Alpaca may still return fewer — 30-minute pages come back ~600 bars long
+    // whatever this says (measured 2026-09-10) — so pacing has to count pages,
+    // which the backtest data client's limiter does.
     limit: Math.min(10_000, maxPerSymbol),
   };
   const opts = { maxPerSymbol };

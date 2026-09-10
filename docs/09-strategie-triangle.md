@@ -136,19 +136,32 @@ faisait le moteur journalier.
 
 **Données.** Une seule taille de bougie par symbole ; 200 jours calendaires
 d'historique avant `start` amorcent figures, volume et vol. La limite de
-données d'Alpaca (200 requêtes par minute en offre gratuite, comptées par page)
-dicte la récupération — un premier run de 40 symboles × 6 ans a échoué sur
-« too many requests », chaque nouvel essai tombant dans la même minute :
+données d'Alpaca (200 requêtes par minute, **comptées par page**) dicte la
+récupération. Alpaca renvoie les bougies 30 min par pages d'~600, quel que soit
+`limit` (mesuré le 2026-09-10 : KO 2023, 599 bougies du 3 janvier au 3 février
+par page) : 40 symboles × 6 ans, c'est ~3 200 requêtes. Un premier run a échoué
+sur « too many requests » — le limiteur par défaut du SDK est un seau de 200
+jetons plein au départ, qui laisse passer ~400 requêtes la première minute :
 
-- en `30Min`, l'historique est demandé par tranches de 365 jours : une année
-  fait au plus 8 064 bougies (04:00–20:00 ET), sous la page de 10 000, donc un
-  appel = une requête. En `1Day`, un seul appel, comme la première étude ;
-- un cadenceur partagé espace les requêtes pour rester sous 180 par minute,
-  2 symboles à la fois (~290 requêtes, ~1 min 40 pour 41 symboles × 6,5 ans) ;
-- chaque requête passe par `withRetry` (4 tentatives). Sur un 429, ou une erreur
-  sans statut HTTP (ce que renvoie le SDK quand la limite coupe la connexion),
-  l'attente va jusqu'à `X-RateLimit-Reset`, jamais moins de 61 s ; toute autre
-  erreur réessayable garde le backoff court 3 / 6 / 12 s.
+- les backtests passent par leur propre client de données
+  (`getBacktestDataClient`, `src/server/alpaca/client.ts`) dont le limiteur ne
+  peut pas faire de rafale : 3 jetons rechargés à 3 par seconde, soit au plus
+  ~183 requêtes sur n'importe quelle minute, **pages comprises**. Le client
+  partagé (celui de l'agent live) n'est pas touché ;
+- en `30Min`, l'historique est demandé par tranches de 365 jours (~12 pages
+  chacune) : un échec ne refait qu'une année. En `1Day`, un seul appel, comme
+  la première étude ; 2 symboles à la fois ;
+- chaque appel passe par `withRetry` (4 tentatives). Sur un 429 que les
+  réessais du SDK n'ont pas absorbé, ou une erreur sans statut HTTP (ce que
+  renvoie le SDK quand la limite coupe la connexion), l'attente va jusqu'à
+  `X-RateLimit-Reset`, jamais moins de 61 s ; toute autre erreur réessayable
+  garde le backoff court 3 / 6 / 12 s ;
+- les séries déjà récupérées restent 2 h en cache dans le processus serveur
+  (clé : symbole, bougie, fenêtre, flux) : les variantes d'une grille ne
+  retéléchargent pas les mêmes 6 ans. Un avertissement le signale dans la
+  réponse ;
+- si le client HTTP abandonne, `request.signal` arrête les requêtes restantes
+  du run.
 
 Échec final : HTTP 500 avec le symbole en tête du message.
 
@@ -197,7 +210,31 @@ Données SIP Alpaca, capital 100 000 $, 1 % de risque par trade. Toutes les
 variantes testées sont listées — c'est un test de robustesse, pas une
 recherche du meilleur réglage ; chacune change un seul élément de sa référence.
 
-<!-- 6.1 filled from the 30Min grid -->
+### 6.1 Triggers 30 min
+
+Défauts 30 min (§2.1), 3 contacts, stop à la clôture de séance. SPY sur
+2020-09 → 2026-09 : +118,5 % (drawdown max 25,4 %).
+
+| | variante | trades | réussite / équilibre | payoff | R moyen | rendement | DD max | cible atteinte | détention |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | défauts : 10 symboles, 3 ans | 4 | 25,0 % / 51,1 % | 0,96 | −0,35 | −1,4 % | 2,1 % | 50 % | 5,3 s. |
+| **I** | **40 symboles, 6 ans, call spread** | **64** | **14,1 % / 75,5 %** | **0,32** | **−0,46** | **−23,9 %** | **23,9 %** | **48 %** | **3,9 s.** |
+<!-- rows J–M -->
+
+Run I (40 symboles × 6 ans, lancé seul) : 2 320 s, aucune erreur de
+récupération, Σ P&L des trades = équité finale − initiale. 67 cassures
+validées, 140 écartées sur volume faible (comparé au même créneau), 64 prises.
+
+**Pourquoi atteindre la cible ne paie plus.** Les figures de 10 séances sont
+petites — hauteur médiane 3,1 % du prix (quartiles 2,2 % et 4,1 %) — alors
+qu'un call à delta 0,45 sur 35 jours se place 1 à 2 % au-dessus du spot. Dans
+19 trades sur 64, le strike long est déjà au niveau de la cible ou au-dessus :
+le spread se réduit à un pas de strike, et 3 % de friction sur chacune des deux
+jambes en mange une large part. Résultat sur I : les 31 sorties sur cible font
+**−0,32 R** en moyenne (9 gagnantes) — −0,71 R quand le strike est au-dessus de
+la cible, −0,08 R sinon ; les 33 stops font −0,58 R. En journalier, la même
+structure plaçait la cible 3 % au moins au-dessus de la résistance ; en 30 min,
+elle mesure un mouvement que l'option n'a pas le temps de valoriser.
 
 ### 6.2 Référence journalière (première étude)
 
@@ -255,10 +292,9 @@ curl -sX POST localhost:3000/api/backtest/triangle -H 'Content-Type: application
 # référence journalière, variante D : même corps + "timeframe":"1Day","minTouches":2
 ```
 
-Un run de 40 symboles × 6 ans en 30 min fait ~290 requêtes, cadencées sous 180
-par minute (§3). Le cadenceur est propre à chaque run : **un run à la fois**,
-espacés d'au moins 60 s — deux runs simultanés doublent le débit et retombent
-sur « too many requests ». Le client doit attendre la réponse : `curl -m 3600`
-convient, pas le `fetch` de Node, qui abandonne après 300 s sans en-têtes —
-et la route continue alors de calculer (et de solliciter l'API) sans personne
-pour lire le résultat.
+Un run de 40 symboles × 6 ans en 30 min fait ~3 200 requêtes, soit au moins
+~18 min au rythme du limiteur (§3) ; les variantes suivantes de la même
+fenêtre sortent du cache en quelques secondes. **Un run à la fois**, espacés
+d'au moins 60 s : la limite est par compte, deux runs simultanés se la
+partagent. Le client doit attendre la réponse : `curl -m 3600` convient, pas le
+`fetch` de Node, qui abandonne après 300 s sans en-têtes.

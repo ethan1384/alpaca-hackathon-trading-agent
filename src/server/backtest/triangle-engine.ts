@@ -69,30 +69,32 @@ const CHART_CONTEXT: Record<TriangleTimeframe, { before: number; after: number }
   "30Min": { before: 39, after: 26 },
 };
 /**
- * Fetching under Alpaca's data rate limit — 200 requests a minute on the free
- * plan, counted per page. Six years of 30-minute bars for 41 symbols is ~200
- * pages, so an unpaced run lands on the limit and every retry inside the same
- * minute fails again (measured 2026-09-10: "too many requests" on SPY and DIA).
+ * Fetching under Alpaca's data rate limit — 200 requests a minute, counted per
+ * page. Alpaca pages 30-minute bars ~600 at a time whatever `limit` asks
+ * (measured 2026-09-10: KO 2023, 599 bars from Jan 3 to Feb 3 per page), so
+ * six years of 30-minute history for 41 symbols is ~3,200 requests. A first
+ * version paced calls rather than pages: each call burst a dozen pages into
+ * the limit ("too many requests" on SPY and DIA).
  *
- * - `30Min` history is requested in 365-day chunks: a year of 30-minute bars
- *   is at most 8,064 (04:00–20:00 ET) under the 10,000-bar page, so one call is
- *   one request and the pacer below counts real requests. `1Day` stays a single
- *   call, so it fetches exactly what the first study did.
- * - A pacer shared by the run's workers spaces request starts to stay under
- *   `REQUESTS_PER_MINUTE`, leaving headroom for the dashboard and a retry.
- * - A 429, or a failure with no HTTP status (what the SDK throws when the
- *   limit cuts the connection), waits the window out: until
- *   `X-RateLimit-Reset` when the error carries it, never less than 61 s. Any
- *   other retryable failure keeps the short exponential backoff.
+ * - Pacing is per page, inside the data client (`getBacktestDataClient`, at
+ *   most ~183 requests in any minute) — the only layer that sees every page.
+ * - `30Min` history is requested in 365-day chunks (≈ 12 pages each), so a
+ *   failure retries one year, not six. `1Day` stays a single call, fetching
+ *   exactly what the first study did.
+ * - Two symbols at a time.
+ * - A 429 the client's own page retries could not absorb, or a failure with no
+ *   HTTP status (what the SDK throws when the limit cuts the connection),
+ *   waits the window out: until `X-RateLimit-Reset` when the error carries it,
+ *   never less than 61 s. Any other retryable failure keeps the short
+ *   exponential backoff.
  */
 const FETCH_CONCURRENCY = 2;
 const FETCH_ATTEMPTS = 4;
 const FETCH_BASE_DELAY_MS = 3_000;
-const REQUESTS_PER_MINUTE = 180;
 const RATE_LIMIT_WAIT_MS = 61_000;
-/** Calendar days per 30-minute request; see above. */
+/** Calendar days per 30-minute call; see above. */
 const CHUNK_DAYS = 365;
-/** One page. A chunk returning this many bars was cut short. */
+/** Per-call bar cap. A year of 30-minute bars is at most 8,064 (04:00–20:00 ET). */
 const CHUNK_MAX_BARS = 10_000;
 /** A spread priced outside this share of its width means broken inputs, not a trade. */
 const MIN_DEBIT_RATIO = 0.05;
@@ -108,9 +110,9 @@ export interface TriangleBacktestDeps {
     maxPerSymbol?: number,
     feed?: "iex" | "sip",
   ) => Promise<Bar[]>;
-  /** Every wait — request pacing and retry backoff. Injectable so tests do not wait. */
+  /** Retry waits, rate-limit window included. Injectable so tests do not wait. */
   sleep?: (ms: number) => Promise<void>;
-  /** Wall clock in epoch ms, for pacing and rate-limit resets. Injectable for tests. */
+  /** Wall clock in epoch ms, for rate-limit resets and the bar cache. Injectable for tests. */
   now?: () => number;
   /**
    * Aborted when the HTTP client goes away. Checked before every request, so a
@@ -160,29 +162,6 @@ function storeSeries(key: string, entry: CachedSeries): void {
     }
     seriesCache.delete(oldest);
   }
-}
-
-/**
- * Spaces request starts at least `intervalMs` apart across everything that
- * shares it — the run's fetch workers. Resolves once the caller may send, with
- * the wait it imposed.
- */
-export function createPacer(
-  intervalMs: number,
-  now: () => number,
-  sleep: (ms: number) => Promise<void>,
-): () => Promise<number> {
-  let nextAt = Number.NEGATIVE_INFINITY;
-  return async () => {
-    const t = now();
-    const at = Math.max(t, nextAt);
-    nextAt = at + intervalMs;
-    const wait = at - t;
-    if (wait > 0) {
-      await sleep(wait);
-    }
-    return wait;
-  };
 }
 
 /** `[from, to]` date ranges of at most `days` calendar days, covering `start..end` without gap or overlap. */
@@ -471,7 +450,6 @@ export async function runTriangleBacktest(
   const fetchStart = shiftDays(params.start, -HISTORY_PAD_DAYS);
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? defaultSleep;
-  const pace = createPacer(Math.ceil(60_000 / REQUESTS_PER_MINUTE), now, sleep);
   // `1Day`: one call, exactly as the first study fetched. `30Min`: one page per call.
   const chunks: [string, string][] = intraday
     ? dateChunks(fetchStart, params.end, CHUNK_DAYS)
@@ -496,11 +474,7 @@ export async function runTriangleBacktest(
       let bars: Bar[];
       try {
         bars = await withRetry(
-          async () => {
-            // Inside the retried call: a retry is a request too.
-            await pace();
-            return getBarsRange(symbol, timeframe, from, to, maxBars, params.feed);
-          },
+          () => getBarsRange(symbol, timeframe, from, to, maxBars, params.feed),
           {
             operation: `triangle-bars-${timeframe}`,
             attempts: FETCH_ATTEMPTS,
