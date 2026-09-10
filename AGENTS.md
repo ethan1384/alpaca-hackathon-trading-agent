@@ -44,6 +44,34 @@ log, reconciliation). Every item carries a status — `enforced`, `default`, or
 `gap` — so the difference between a stated parameter and a checked one stays
 visible. Read it before adding a strategy, a sizing rule, or a risk control.
 
+## Skill routing — pick the resource before acting
+
+Two skill sets are installed: BMAD-METHOD (from `bmad-code-org/BMAD-METHOD` via
+`npx skills add`; canonical copies in `.agents/skills/`, symlinked into
+`.claude/skills/`) and the vendored Alpaca skills (see *Alpaca Skills*).
+Classify every request first, then invoke the matching skill. In Claude Code a
+`UserPromptSubmit` hook (`.claude/hooks/skill-router.sh`) repeats this on every
+prompt. The table mirrors the `bmad` skill's own routing
+(`.agents/skills/bmad/references/help.md`) — if they disagree, that file wins.
+
+| Request | Resource |
+| --- | --- |
+| Plain question, typo, formatting, ignore-file or config hygiene | Act directly — no workflow |
+| Feature, bug fix, or meaningful change that fits one session | `bmad-build` |
+| Work spanning 2-10 sessions (an epic) | `bmad-spec` → stories → `bmad-build` per story → `bmad-retrospective` |
+| Project-sized work (a new product area) | `bmad` → brief or PRFAQ → `bmad-prd` → `bmad-architecture` → `bmad-create-epics-and-stories` → `bmad-sprint-planning` |
+| "Where do I start?", "what's next?", unsure | `bmad` |
+| The user asks to *review* a diff, PR or document | `bmad-code-review` (code) or `bmad-review` (any artifact) |
+| Significant change of direction mid-sprint | `bmad-correct-course` |
+| Research, or choosing between options | `bmad-deep-recon` |
+| Anything touching the Alpaca API (orders, market data, backtests) | The matching `alpaca-*` skill — in addition to `bmad-build` when it means writing code |
+
+Precedence: the hackathon rules above and the *Hard rules* below override any
+BMAD workflow, and execution changes still go through `executeSignal()`. This
+file is maintained by hand — do not run `bmad-project-context` over it. BMAD
+runtime config lives in `_bmad/`, workflow output (specs, stories) in
+`_bmad-output/`; both need `uv`. Update with `npx skills update`.
+
 ## Stack
 
 - Next.js 16 App Router, React 19, TypeScript strict
@@ -147,8 +175,9 @@ spread. Multi-leg order support lives in `PlaceOrderSchema` (`legs[]` →
 
 Vendored from [`alpacahq/alpaca-skills`](https://github.com/alpacahq/alpaca-skills)
 (Apache-2.0). Canonical copies live in `.claude/skills/<name>/SKILL.md`;
-`.cursor/skills` is a symlink to that directory. **Codex / other agents:** read
-the matching `SKILL.md` directly before doing the task it covers.
+`.cursor/skills` is a symlink to that directory, so Cursor also sees the BMAD
+skills linked there. **Codex / other agents:** read the matching `SKILL.md`
+directly before doing the task it covers (BMAD skills are also in `.agents/skills/`).
 
 Each skill is a `SKILL.md` (some with a `reference.md`) of step-by-step
 instructions, guardrails, and reporting standards. Load one on demand — do not

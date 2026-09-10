@@ -7,7 +7,15 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!node_modules", "!.next", "!pnpm-lock.yaml"]
+    "includes": [
+      "**",
+      "!node_modules",
+      "!.next",
+      "!pnpm-lock.yaml",
+      "!.agents",
+      "!_bmad",
+      "!skills-lock.json"
+    ]
   },
   "formatter": {
     "enabled": true,
