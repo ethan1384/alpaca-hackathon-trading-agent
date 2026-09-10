@@ -77,8 +77,12 @@ strategies and tests run without touching Alpaca.
 `place_option_strategy` exposes the whole pipeline to agents: pass
 `{ underlying, kind, selection, maxContracts }` and it resolves + submits.
 
-## Not built yet
+## Status
 
-Concrete strategies (e.g. the ascending-triangle breakout in
-`docs/04-llm-agent.md`), the trigger-detection step, the LLM decision layer, and
-the `/api/agent` SSE surface.
+- **Built:** the LLM decision agent (`src/server/agent/`, docs/08) on the
+  put-credit-spread strategy (`credit-spread-strategy.ts`) — **archived** since
+  2026-09-10, git tag `archive/credit-spread-agent`.
+- **Built, backtest only:** the ascending-triangle breakout detector
+  (`src/server/backtest/triangle.ts`) and its engine (docs/09). It is not a
+  `Strategy` here yet: its backtest shows no edge (docs/09 §7).
+- **Not built:** a live triangle `Strategy`, and the `/api/agent` SSE surface.

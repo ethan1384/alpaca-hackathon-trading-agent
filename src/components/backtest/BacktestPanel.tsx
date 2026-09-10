@@ -39,7 +39,7 @@ const INITIAL_FORM = {
 
 type FormState = typeof INITIAL_FORM;
 
-function Field({
+export function Field({
   label,
   hint,
   value,
@@ -64,7 +64,7 @@ function Field({
   );
 }
 
-function Stat({
+export function Stat({
   label,
   value,
   tone,

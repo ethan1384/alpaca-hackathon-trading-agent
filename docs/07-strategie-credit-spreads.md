@@ -1,5 +1,11 @@
 # Stratégie — Credit spreads courts sur SPY
 
+> **ARCHIVÉ — 2026-09-10.** Stratégie de l'agent live pendant la compétition
+> (2026-08-31 → 2026-09-03), figée au tag git **`archive/credit-spread-agent`**.
+> Le moteur de backtest reste disponible (onglet *Credit spreads (archived)*).
+> La piste de recherche est désormais le triangle ascendant :
+> `docs/09-strategie-triangle.md`.
+
 *Spécification + résultats du backtest.*
 
 Module : `src/server/backtest/credit-spread.ts` · Domaine :

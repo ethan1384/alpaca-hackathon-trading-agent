@@ -109,14 +109,14 @@ interface OpenPosition {
   scaledOut: boolean;
 }
 
-function shiftDays(date: string, days: number): string {
+export function shiftDays(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
 /** Annualised IV for a session: realised vol over prior sessions only, marked up. */
-function impliedVolFor(
+export function impliedVolFor(
   dailyCloses: { date: string; close: number }[],
   sessionDate: string,
   lookback: number,

@@ -1,5 +1,14 @@
 # LLM decision agent — SPY put credit spread
 
+> **ARCHIVED — 2026-09-10.** This agent traded the hackathon (2026-08-31 →
+> 2026-09-03) and is frozen at git tag **`archive/credit-spread-agent`**
+> (`git checkout archive/credit-spread-agent` restores it exactly). The code
+> below is still in the tree and still wired to `/api/agent/run`, but it can no
+> longer open a position: `runEntry` refuses outside the scoring window, which
+> has closed. `.github/workflows/agent-cron.yml` still calls the endpoint — a
+> no-op, to be disabled. The strategy under study is now the ascending-triangle
+> breakout: see `docs/09-strategie-triangle.md`.
+
 Module: `src/server/agent/` · Config: `src/config/agent.ts` (+ LLM endpoint in
 `src/config/env.ts`) · Routes: `/api/agent/{run,status,decisions}` · MCP:
 `run_agent_cycle`, `get_agent_status` · UI: dashboard **Agent** tab.

@@ -12,6 +12,14 @@
 >   between a local Ollama and Featherless.
 >
 > The rest of this file is kept as the original design rationale.
+>
+> **Update 2026-09-10.** The credit-spread agent is archived (git tag
+> `archive/credit-spread-agent`). The ascending-triangle breakout sketched below
+> now has a detector and a backtest — `docs/09-strategie-triangle.md` — and the
+> sketch has been superseded on two points: it trades daily bars with a
+> 30-45 DTE call spread or long call, and the floor is "strictly higher swing
+> lows", not a regression slope. No variant of the backtest shows an edge, so
+> the LLM validation layer has **not** been wired to it.
 
 Design notes for adding an LLM decision layer. The strategy/execution contract it
 targets (`src/domain/strategy.ts`, `src/server/strategies/`) is implemented.

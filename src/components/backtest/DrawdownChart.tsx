@@ -10,29 +10,24 @@ import {
   LineStyle,
 } from "lightweight-charts";
 import { useEffect, useRef } from "react";
-import { equityLine, toLineData } from "@/components/backtest/chart-data";
+import { drawdownLine, toLineData } from "@/components/backtest/chart-data";
 import type { EquityPoint } from "@/domain/backtest";
 
-interface EquityCurveProps {
+interface DrawdownChartProps {
   points: EquityPoint[];
-  /** Starting equity — the baseline the curve is coloured against. */
-  baseline: number;
-  /** Optional comparison curve (e.g. buy-and-hold), drawn dashed underneath. */
+  /** Comparison curve, drawn dashed — same one the equity chart shows. */
   benchmark?: EquityPoint[];
   height?: number;
 }
 
-const UP = "#10b981";
-const DOWN = "#ef4444";
-const BENCHMARK = "#94a3b8";
+const percent = { type: "custom" as const, formatter: (v: number) => `${v.toFixed(1)}%` };
 
 /**
- * The backtest's equity curve, drawn against starting equity so the eye reads
- * "above water / under water" before it reads any number. The intraday engines
- * emit one point per closed trade — a ledger, so gaps between sessions are
- * expected; the triangle engine marks every session.
+ * Underwater chart: how far below its running high the book sat, session by
+ * session. The equity curve shows where it ended; this shows what it cost to
+ * sit through.
  */
-export function EquityCurve({ points, baseline, benchmark, height = 260 }: EquityCurveProps) {
+export function DrawdownChart({ points, benchmark, height = 150 }: DrawdownChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Baseline"> | null>(null);
@@ -58,26 +53,25 @@ export function EquityCurve({ points, baseline, benchmark, height = 260 }: Equit
       crosshair: { mode: 0 },
     });
 
-    // Added first so the strategy curve draws on top of it.
     const benchmarkSeries = chart.addSeries(LineSeries, {
-      color: BENCHMARK,
+      color: "#94a3b8",
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
-      priceFormat: { type: "price", precision: 0, minMove: 1 },
+      priceFormat: percent,
     });
 
     const series = chart.addSeries(BaselineSeries, {
-      baseValue: { type: "price", price: baseline },
-      topLineColor: UP,
-      topFillColor1: "rgba(16, 185, 129, 0.28)",
-      topFillColor2: "rgba(16, 185, 129, 0.02)",
-      bottomLineColor: DOWN,
-      bottomFillColor1: "rgba(239, 68, 68, 0.02)",
-      bottomFillColor2: "rgba(239, 68, 68, 0.28)",
-      priceFormat: { type: "price", precision: 0, minMove: 1 },
+      baseValue: { type: "price", price: 0 },
+      topLineColor: "rgba(0, 0, 0, 0)",
+      topFillColor1: "rgba(0, 0, 0, 0)",
+      topFillColor2: "rgba(0, 0, 0, 0)",
+      bottomLineColor: "#ef4444",
+      bottomFillColor1: "rgba(239, 68, 68, 0.05)",
+      bottomFillColor2: "rgba(239, 68, 68, 0.35)",
+      priceFormat: percent,
     });
 
     chartRef.current = chart;
@@ -98,15 +92,15 @@ export function EquityCurve({ points, baseline, benchmark, height = 260 }: Equit
       seriesRef.current = null;
       benchmarkRef.current = null;
     };
-  }, [height, baseline]);
+  }, [height]);
 
   useEffect(() => {
     const series = seriesRef.current;
     if (!series) {
       return;
     }
-    series.setData(toLineData(equityLine(points)));
-    benchmarkRef.current?.setData(toLineData(equityLine(benchmark ?? [])));
+    series.setData(toLineData(drawdownLine(points)));
+    benchmarkRef.current?.setData(toLineData(drawdownLine(benchmark ?? [])));
     chartRef.current?.timeScale().fitContent();
   }, [points, benchmark]);
 

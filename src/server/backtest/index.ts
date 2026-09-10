@@ -35,3 +35,14 @@ export {
   type TriggerFilters,
   toEastern,
 } from "./orb";
+export {
+  detectTriangleBreakouts,
+  findPivots,
+  type Pivot,
+  supportAt,
+  type TriangleBreakout,
+  type TriangleDetection,
+  type TrianglePattern,
+  type TriangleSignalParams,
+} from "./triangle";
+export { runTriangleBacktest, summariseTriangle } from "./triangle-engine";

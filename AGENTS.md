@@ -134,13 +134,25 @@ Manual order execution and the MCP server are documented in `docs/04-trading-and
 
 ## Backtests
 
-Two independent engines under `src/server/backtest/`, one tab in the UI
+Three independent engines under `src/server/backtest/`, one tab in the UI
 (`BacktestWorkspace`), one shared Black-Scholes module:
 
 | Engine | Strategy | Domain | Route |
 | --- | --- | --- | --- |
+| `triangle-engine.ts` | Ascending-triangle breakout → call spread / long call, daily swing | `src/domain/backtest-triangle.ts` | `/api/backtest/triangle` |
 | `engine.ts` | ORB → 0DTE debit vertical | `src/domain/backtest.ts` | `/api/backtest` |
-| `credit-spread.ts` | 1-2 DTE short credit spreads | `src/domain/backtest-credit.ts` | `/api/backtest/credit` |
+| `credit-spread.ts` | 1-2 DTE short credit spreads (archived strategy) | `src/domain/backtest-credit.ts` | `/api/backtest/credit` |
+
+**Strategy status (2026-09-10).** The put-credit-spread strategy the live agent
+ran through the hackathon is **archived**: git tag `archive/credit-spread-agent`,
+banners on `docs/07` and `docs/08`. Its code is still in place — the live agent
+in `src/server/agent/` has *not* been switched. The research track is now the
+ascending-triangle breakout (`docs/09-strategie-triangle.md`); read §6–7 there
+before wiring it live: no variant of its backtest shows an edge yet.
+
+The triangle signal (`triangle.ts`) is pure and lookahead-free — a swing high
+counts only `pivotStrength` bars after it prints, and the tests check that the
+detector returns the same breakout on a series truncated at that bar.
 
 `black-scholes.ts` is pure and shared — no `server-only`, so it stays testable
 and reusable. Read `docs/07-strategie-credit-spreads.md` before touching the
@@ -148,7 +160,7 @@ credit engine: §6 lists what the model does *not* capture, and §7 shows that t
 whole result hinges on `ivMultiplier`, which is an assumption rather than
 something the backtest can discover.
 
-Both engines measure time to expiry in **trading minutes** (`tradingYears`),
+All three engines measure time to expiry in **trading minutes** (`tradingYears`),
 on the same 252-session calendar realised vol is annualised on. Do not reach for
 `yearsBetween` when pricing: a 6.5-hour session is 1/252 of a trading year but
 1/1348 of a calendar one, so calendar time understates `t` by ~5x on a 0DTE and

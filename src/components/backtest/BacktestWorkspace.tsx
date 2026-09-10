@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { BacktestPanel } from "@/components/backtest/BacktestPanel";
 import { CreditSpreadPanel } from "@/components/backtest/CreditSpreadPanel";
+import { TrianglePanel } from "@/components/backtest/TrianglePanel";
 import { cn } from "@/lib/utils";
 
 /**
@@ -10,16 +11,21 @@ import { cn } from "@/lib/utils";
  * shape — they share only the equity-curve component and the verdict framing,
  * because the question ("does the hit rate clear what the payoff needs?") is the
  * same one whichever way the premium flows.
+ *
+ * The credit spread was the live agent's strategy through the hackathon; it is
+ * archived (git tag `archive/credit-spread-agent`, docs/07–08) and kept here
+ * for comparison.
  */
 const STRATEGIES = [
+  { id: "triangle", label: "Ascending triangle → call", note: "Daily swing, 30-45 DTE" },
   { id: "orb", label: "ORB → debit vertical", note: "0DTE, directional" },
-  { id: "credit", label: "Credit spreads", note: "1-2 DTE, short premium" },
+  { id: "credit", label: "Credit spreads (archived)", note: "1-2 DTE, former live agent" },
 ] as const;
 
 type StrategyId = (typeof STRATEGIES)[number]["id"];
 
 export function BacktestWorkspace() {
-  const [strategy, setStrategy] = useState<StrategyId>("orb");
+  const [strategy, setStrategy] = useState<StrategyId>("triangle");
 
   return (
     <div className="flex flex-col gap-6">
@@ -42,7 +48,13 @@ export function BacktestWorkspace() {
         ))}
       </div>
 
-      {strategy === "orb" ? <BacktestPanel /> : <CreditSpreadPanel />}
+      {strategy === "triangle" ? (
+        <TrianglePanel />
+      ) : strategy === "orb" ? (
+        <BacktestPanel />
+      ) : (
+        <CreditSpreadPanel />
+      )}
     </div>
   );
 }

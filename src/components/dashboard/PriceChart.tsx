@@ -10,6 +10,7 @@ import {
   type IPriceLine,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
+  LineSeries,
   LineStyle,
   type SeriesMarker,
   type Time,
@@ -40,6 +41,18 @@ export interface ChartPriceLine {
   dashed?: boolean;
 }
 
+/**
+ * A free-form polyline over the candles — e.g. a sloped trendline. Unlike a
+ * `ChartPriceLine` it spans only its own points. Times follow the same rule as
+ * markers: align them to existing bars.
+ */
+export interface ChartLine {
+  points: { time: string; value: number }[];
+  color: string;
+  dashed?: boolean;
+  width?: 1 | 2 | 3 | 4;
+}
+
 interface PriceChartProps {
   bars: Bar[];
   height?: number;
@@ -53,6 +66,8 @@ interface PriceChartProps {
   markers?: ChartMarker[];
   /** Horizontal levels drawn across the pane and labelled on the price scale. */
   priceLines?: ChartPriceLine[];
+  /** Polylines drawn over the candles. Memoize, like `markers`. */
+  lines?: ChartLine[];
 }
 
 const UP = "#10b981";
@@ -74,6 +89,7 @@ export function PriceChart({
   intraday = false,
   markers,
   priceLines,
+  lines,
 }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -228,6 +244,43 @@ export function PriceChart({
       }
     };
   }, [chartSeries, priceLines]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !chartSeries || !lines?.length) {
+      return;
+    }
+    const created = lines.map((line) => {
+      const series = chart.addSeries(LineSeries, {
+        color: line.color,
+        lineWidth: line.width ?? 2,
+        lineStyle: line.dashed ? LineStyle.Dashed : LineStyle.Solid,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      // Strictly ascending, unique times — the library throws otherwise.
+      const byTime = new Map<number, number>();
+      for (const point of line.points) {
+        byTime.set(toChartTime(point.time), point.value);
+      }
+      series.setData(
+        [...byTime.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([time, value]) => ({ time: time as UTCTimestamp, value })),
+      );
+      return series;
+    });
+    return () => {
+      for (const series of created) {
+        try {
+          chart.removeSeries(series);
+        } catch {
+          // Chart already disposed — its teardown dropped these.
+        }
+      }
+    };
+  }, [chartSeries, lines]);
 
   useEffect(() => {
     const series = seriesRef.current;

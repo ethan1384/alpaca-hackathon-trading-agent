@@ -48,3 +48,6 @@ next-env.d.ts
 
 # runner / dev-server logs — run artifacts, not source
 *.log
+
+# BMAD transient render output
+_bmad/render/
